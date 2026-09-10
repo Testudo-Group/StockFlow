@@ -5,7 +5,7 @@ import {
     FiArrowLeft, FiEdit2, FiTrash2, FiPlus, FiDownload, FiX, FiCheck,
     FiAlertTriangle, FiDollarSign, FiShoppingCart, FiCreditCard
 } from 'react-icons/fi';
-import api from '../../utils/api';
+import api, { getApiCountryId } from '../../utils/api';
 import Spinner from '../../components/Spinner';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../utils/constants';
@@ -84,7 +84,9 @@ const LedgerPanel = ({ customerId }) => {
     const handleExport = async () => {
         try {
             const token = localStorage.getItem('token');
-            const url = `${api.defaults.baseURL}/sor/customers/${customerId}/ledger/export?format=csv`;
+            const url =
+                `${api.defaults.baseURL}/sor/customers/${customerId}/ledger/export` +
+                `?format=csv&countryId=${getApiCountryId() || ''}`;
             const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
             if (!res.ok) throw new Error('Export failed');
             const blob = await res.blob();

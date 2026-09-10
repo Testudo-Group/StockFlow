@@ -1,7 +1,7 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-const { formatMoneyCode } = require('../utils/currency');
+const { formatMoneyCode, orderCurrency } = require('../utils/currency');
 
 /**
  * Receipt Generation Service
@@ -330,11 +330,11 @@ class ReceiptService {
             doc.text(qtyText, 300, currentY, { width: 80, align: 'right' });
             
             // Unit Price
-            doc.text(formatMoneyCode((item.price || 0), order.currency), 
+            doc.text(formatMoneyCode((item.price || 0), orderCurrency(order)), 
                      390, currentY, { width: 80, align: 'right' });
             
             // Subtotal
-            doc.text(formatMoneyCode(subtotal, order.currency), 
+            doc.text(formatMoneyCode(subtotal, orderCurrency(order)), 
                      480, currentY, { width: 65, align: 'right' });
             
             currentY += itemHeight + (cartonSize > 1 && cartons > 0 && pieces > 0 ? 5 : 0);
@@ -373,7 +373,7 @@ class ReceiptService {
         if (order.discountAmount > 0 || order.deliveryFee > 0) {
             const rowY = doc.y;
             doc.text('Subtotal:', summaryX, rowY);
-            doc.text(formatMoneyCode(itemsSubtotal, order.currency), 
+            doc.text(formatMoneyCode(itemsSubtotal, orderCurrency(order)), 
                      valueX, rowY, { width: 95, align: 'right' });
             
             doc.moveDown(0.5);
@@ -384,7 +384,7 @@ class ReceiptService {
             const rowY = doc.y;
             doc.fillColor('#EF4444')
                .text('Discount:', summaryX, rowY);
-            doc.text(formatMoneyCode(order.discountAmount, order.currency, { negative: true }), 
+            doc.text(formatMoneyCode(order.discountAmount, orderCurrency(order), { negative: true }), 
                      valueX, rowY, { width: 95, align: 'right' })
                .fillColor('#000000');
             
@@ -395,7 +395,7 @@ class ReceiptService {
         if (order.deliveryFee > 0) {
             const rowY = doc.y;
             doc.text('Delivery Fee:', summaryX, rowY);
-            doc.text(formatMoneyCode(order.deliveryFee, order.currency), 
+            doc.text(formatMoneyCode(order.deliveryFee, orderCurrency(order)), 
                      valueX, rowY, { width: 95, align: 'right' });
             
             doc.moveDown(0.5);
@@ -417,7 +417,7 @@ class ReceiptService {
            .font('Helvetica-Bold')
            .text('TOTAL AMOUNT:', summaryX, totalY);
         doc.fillColor('#4880FF')
-           .text(formatMoneyCode(order.totalAmount, order.currency), 
+           .text(formatMoneyCode(order.totalAmount, orderCurrency(order)), 
                  valueX, totalY, { width: 95, align: 'right' })
            .fillColor('#000000');
         

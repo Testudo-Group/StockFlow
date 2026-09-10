@@ -27,7 +27,9 @@ const StockAdjustmentModal = ({ isOpen, onClose, product, warehouse, onSuccess }
         if (isOpen && (!product || !warehouse)) {
             setLoadingData(true);
             Promise.all([
-                api.get('/products?limit=1000'),
+                // Stock exists independently of pricing, so include products
+                // that have no price set for this country.
+                api.get('/products?limit=1000&includeUnpriced=true'),
                 api.get('/warehouses')
             ]).then(([prodRes, whRes]) => {
                 setProducts(prodRes.data.data);

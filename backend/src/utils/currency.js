@@ -30,6 +30,21 @@ const resolveCurrency = (currency) => {
 };
 
 /**
+ * The currency an order's documents should be rendered in.
+ *
+ * Prefers the snapshot taken when the order was created. Orders that predate
+ * snapshots fall back to their country's current currency, which requires the
+ * caller to have populated `countryId`. Without either we return null and the
+ * formatters use the global fallback.
+ */
+const orderCurrency = (order) => {
+    if (!order) return null;
+    if (order.currency && order.currency.code) return order.currency;
+    if (order.countryId && order.countryId.currencyCode) return order.countryId;
+    return null;
+};
+
+/**
  * Format an amount with its currency symbol, e.g. "₦12,500.00" / "₵340.00".
  *
  * @param {number} amount
@@ -72,6 +87,7 @@ const formatMoneyCode = (amount, currency, options = {}) => {
 
 module.exports = {
     resolveCurrency,
+    orderCurrency,
     formatMoney,
     formatMoneyCode,
 };

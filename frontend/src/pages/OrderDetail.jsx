@@ -185,7 +185,9 @@ ${itemsList}
             const token = localStorage.getItem('token');
             
             // Build URL with regenerate parameter if needed
-            const url = `${api.defaults.baseURL}/orders/${id}/invoice${regenerate ? '?regenerate=true' : ''}`;
+            const url =
+                `${api.defaults.baseURL}/orders/${id}/invoice` +
+                `?countryId=${activeCountry?._id || ''}${regenerate ? '&regenerate=true' : ''}`;
             
             // Fetch the PDF
             const response = await fetch(url, {

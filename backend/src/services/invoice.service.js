@@ -1,7 +1,7 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-const { formatMoneyCode } = require('../utils/currency');
+const { formatMoneyCode, orderCurrency } = require('../utils/currency');
 
 /**
  * Invoice Generation Service
@@ -234,9 +234,9 @@ class InvoiceService {
             
             // Always show total pieces (no carton conversion)
             doc.text(`${item.quantity} pcs`, colQty, currentY, { width: 65, align: 'center' });
-            doc.text(formatMoneyCode((item.price || 0), order.currency),
+            doc.text(formatMoneyCode((item.price || 0), orderCurrency(order)),
                      colPrice, currentY, { width: 75, align: 'right' });
-            doc.text(formatMoneyCode(subtotal, order.currency),
+            doc.text(formatMoneyCode(subtotal, orderCurrency(order)),
                      colTotal, currentY, { width: 70, align: 'right' });
             
             currentY += itemHeight;
@@ -259,7 +259,7 @@ class InvoiceService {
         // Net Total — pin both label and value to the same Y
         const netY = doc.y;
         doc.text('Net Total', labelX, netY);
-        doc.text(formatMoneyCode(itemsSubtotal, order.currency),
+        doc.text(formatMoneyCode(itemsSubtotal, orderCurrency(order)),
                  valueX, netY, { width: valueW, align: 'right' });
 
         doc.y = netY + 20;
@@ -269,7 +269,7 @@ class InvoiceService {
             const deliveryY = doc.y;
             doc.fontSize(10).font('Helvetica').fillColor('#1E293B');
             doc.text('Delivery Fee', labelX, deliveryY);
-            doc.text(formatMoneyCode(order.deliveryFee, order.currency),
+            doc.text(formatMoneyCode(order.deliveryFee, orderCurrency(order)),
                      valueX, deliveryY, { width: valueW, align: 'right' });
             doc.y = deliveryY + 20;
             doc.font('Helvetica-Bold');
@@ -291,7 +291,7 @@ class InvoiceService {
 
         const totalY = doc.y;
         doc.text('NAIRA TOTAL', labelX, totalY);
-        doc.text(formatMoneyCode(order.totalAmount, order.currency),
+        doc.text(formatMoneyCode(order.totalAmount, orderCurrency(order)),
                  valueX, totalY, { width: valueW, align: 'right' });
 
         doc.y = totalY + 24;

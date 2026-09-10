@@ -9,7 +9,7 @@ const ReceiptService = require('./receipt.service');
 const InvoiceService = require('./invoice.service');
 const WhatsAppService = require('./whatsapp.service');
 const { findUnpricedItems } = require('../utils/pricing');
-const { formatMoney } = require('../utils/currency');
+const { formatMoney, orderCurrency } = require('../utils/currency');
 
 /**
  * Immutable fields that must never be overwritten by an edit payload.
@@ -162,6 +162,7 @@ async function editOrder(orderId, updatePayload, userId, countryId) {
         .populate('warehouse', 'name')
         .populate('region', 'name')
         .populate('items.product', 'name sku cartonSize')
+        .populate('countryId', 'currencyCode currencySymbol locale')
         .populate('logs.changedBy', 'email');
 
     // -------------------------------------------------------------------------
@@ -336,7 +337,7 @@ async function _runSideEffects(populatedOrder) {
                 `✏️ *Order Edited*\n\n` +
                 `Order #${populatedOrder.orderNumber || populatedOrder._id.toString().slice(-6).toUpperCase()}\n` +
                 `Customer: ${populatedOrder.customer?.name || 'N/A'}\n` +
-                `Updated Total: ${formatMoney(populatedOrder.totalAmount || 0, populatedOrder.currency, {
+                `Updated Total: ${formatMoney(populatedOrder.totalAmount || 0, orderCurrency(populatedOrder), {
                     decimals: 0,
                 })}`;
             await WhatsAppService.sendMessage(adminNumber, message);

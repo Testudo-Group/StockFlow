@@ -1,5 +1,5 @@
 import { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import api from '../utils/api';
+import api, { setApiCountryId } from '../utils/api';
 import { useAuth } from './AuthContext';
 
 const CountryContext = createContext(null);
@@ -14,6 +14,8 @@ export const CountryProvider = ({ children }) => {
 
     const setActiveCountry = useCallback((country) => {
         setActiveCountryState(country);
+        // Keep the api layer in sync — it stamps countryId onto every request.
+        setApiCountryId(country?._id || null);
         if (country) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(country));
         }
@@ -24,6 +26,7 @@ export const CountryProvider = ({ children }) => {
         if (!isAuthenticated) {
             setAvailableCountries([]);
             setActiveCountryState(null);
+            setApiCountryId(null);
             setLoadingCountries(false);
             return;
         }
@@ -37,6 +40,7 @@ export const CountryProvider = ({ children }) => {
 
                 if (countries.length === 0) {
                     setActiveCountryState(null);
+                    setApiCountryId(null);
                     return;
                 }
 
