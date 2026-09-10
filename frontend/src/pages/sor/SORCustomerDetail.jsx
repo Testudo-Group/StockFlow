@@ -390,8 +390,25 @@ const TemplatesPanel = ({ customerId, countryId }) => {
 };
 
 // ─── PAYMENTS PANEL ──────────────────────────────────────────────────────────
-const emptyPaymentItem = { product: '', quantity: '', price: '' };
 const emptyPayment = { amount: '', paymentDate: new Date().toISOString().split('T')[0], referenceNote: '', items: [] };
+
+const ORDER_STATUS_STYLE = {
+    SETTLED: { bg: '#D1FAE5', fg: '#065F46', label: 'Settled' },
+    PART_PAID: { bg: '#FEF3C7', fg: '#92400E', label: 'Part-paid' },
+    UNPAID: { bg: '#FEE2E2', fg: '#991B1B', label: 'Unpaid' },
+};
+
+const OrderStatusBadge = ({ status }) => {
+    const s = ORDER_STATUS_STYLE[status] || ORDER_STATUS_STYLE.UNPAID;
+    return (
+        <span style={{
+            padding: '2px 10px', borderRadius: '99px', fontSize: '0.72rem',
+            fontWeight: 700, background: s.bg, color: s.fg, whiteSpace: 'nowrap',
+        }}>
+            {s.label}
+        </span>
+    );
+};
 
 const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
     const { user } = useAuth();
@@ -404,12 +421,21 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
     const [form, setForm] = useState(emptyPayment);
     const [formErr, setFormErr] = useState({});
     const [submitting, setSubmitting] = useState(false);
-    // orderedProducts: [{ _id, name, price }] — unique products from customer's orders, most recent price
-    const [orderedProducts, setOrderedProducts] = useState([]);
+    // Settlement is computed server-side so the order view and the product
+    // view are always derived from the same allocation.
     // outstandingProducts: [{ _id, name, price, orderedQty, settledQty, outstandingQty }]
     const [outstandingProducts, setOutstandingProducts] = useState([]);
+    // orderStates: [{ orderId, orderNumber, date, totalAmount, paidAmount,
+    //                 remainingAmount, settlementStatus, lines[] }]
+    const [orderStates, setOrderStates] = useState([]);
     const [expandedPayment, setExpandedPayment] = useState(null);
     const [outstandingRefresh, setOutstandingRefresh] = useState(0);
+
+    // 'product' → settle loose quantities; 'order' → settle one whole order
+    const [mode, setMode] = useState('product');
+    const [selectedOrder, setSelectedOrder] = useState('');
+    // Blank means "settle the rest"; a value records a part-payment
+    const [orderAmount, setOrderAmount] = useState('');
 
     // Overpayment confirmation dialog state
     const [confirmDialog, setConfirmDialog] = useState({ open: false, warning: '', pendingPayload: null });
@@ -425,62 +451,27 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
 
     useEffect(() => { fetchPayments(); }, [fetchPayments]);
 
-    // Derive ordered products + outstanding units from orders and payments
+    // Outstanding units and per-order balances both come from the settlement
+    // endpoint, which allocates every payment oldest-order-first.
     useEffect(() => {
-        Promise.all([
-            api.get(`/sor/orders?customer=${customerId}`),
-            api.get(`/sor/payments?customer=${customerId}`),
-        ]).then(([ordersRes, paymentsRes]) => {
-            const sorOrders = ordersRes.data.data || [];
-            const allPayments = paymentsRes.data.data || [];
+        api.get(`/sor/customers/${customerId}/settlement`)
+            .then((res) => {
+                const { orders = [], products = [] } = res.data.data || {};
+                const outstanding = products.filter((p) => p.outstandingQty > 0);
 
-            // Build ordered qty per product (sum across all orders)
-            const sorted = [...sorOrders].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-            const productMap = new Map(); // pid → { _id, name, price, orderedQty }
-            for (const so of sorted) {
-                for (const item of so.order?.items || []) {
-                    const pid = String(item.product?._id || item.product);
-                    if (!pid) continue;
-                    const existing = productMap.get(pid);
-                    if (existing) {
-                        existing.orderedQty += item.quantity || 0;
-                        existing.price = item.price || existing.price; // keep most recent price
-                    } else {
-                        productMap.set(pid, {
-                            _id: pid,
-                            name: item.product?.name || pid,
-                            price: item.price || 0,
-                            orderedQty: item.quantity || 0,
-                        });
-                    }
-                }
-            }
-
-            // Build settled qty per product (sum across all payment items)
-            const settledMap = new Map(); // pid → settledQty
-            for (const p of allPayments) {
-                for (const it of p.items || []) {
-                    const pid = String(it.product?._id || it.product);
-                    if (!pid) continue;
-                    settledMap.set(pid, (settledMap.get(pid) || 0) + (it.quantity || 0));
-                }
-            }
-
-            // Compute outstanding
-            const outstanding = [...productMap.values()].map((p) => ({
-                ...p,
-                settledQty: settledMap.get(p._id) || 0,
-                outstandingQty: p.orderedQty - (settledMap.get(p._id) || 0),
-            })).filter((p) => p.outstandingQty > 0);
-
-            setOrderedProducts([...productMap.values()]);
-            setOutstandingProducts(outstanding);
-            // Auto-populate form items with all outstanding products (qty blank)
-            setForm(f => ({
-                ...f,
-                items: outstanding.map(p => ({ product: p._id, price: p.price, quantity: '' })),
-            }));
-        }).catch(() => {});
+                setOrderStates(orders);
+                setOutstandingProducts(outstanding);
+                // Auto-populate form items with all outstanding products (qty blank)
+                setForm(f => ({
+                    ...f,
+                    items: outstanding.map(p => ({ product: p._id, price: p.price, quantity: '' })),
+                }));
+                // Drop a selection that has since been settled elsewhere
+                setSelectedOrder((cur) =>
+                    orders.some((o) => o.orderId === cur && o.remainingAmount > 0) ? cur : ''
+                );
+            })
+            .catch(() => {});
     }, [customerId, outstandingRefresh]);
 
     // Update qty for a specific row (identified by product id)
@@ -497,12 +488,29 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
         ? activeItems.reduce((acc, it) => acc + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
         : null;
 
+    // The order currently picked in order mode, with its live balance
+    const activeOrder = orderStates.find((o) => o.orderId === selectedOrder) || null;
+    const unsettledOrders = orderStates.filter((o) => o.remainingAmount > 0);
+    // Blank amount settles the remainder outright
+    const orderPayAmount = orderAmount === '' ? (activeOrder?.remainingAmount ?? 0) : Number(orderAmount);
+    const isPartial = activeOrder != null && orderAmount !== '' && orderPayAmount < activeOrder.remainingAmount;
+
     const validateForm = () => {
         const e = {};
+        if (!form.paymentDate) e.paymentDate = 'Payment date is required';
+
+        if (mode === 'order') {
+            if (!selectedOrder) e.order = 'Select an order to settle';
+            else if (!orderPayAmount || isNaN(orderPayAmount) || orderPayAmount <= 0)
+                e.orderAmount = 'Enter an amount greater than zero';
+            else if (activeOrder && orderPayAmount > activeOrder.remainingAmount + 0.005)
+                e.orderAmount = `That is more than the ${fmt(activeOrder.remainingAmount)} still owed on this order`;
+            return e;
+        }
+
         const effectiveAmount = activeItems.length > 0 ? computedAmount : Number(form.amount);
         if (!effectiveAmount || isNaN(effectiveAmount) || effectiveAmount <= 0)
             e.amount = 'Enter a payment amount or settle at least one product';
-        if (!form.paymentDate) e.paymentDate = 'Payment date is required';
         return e;
     };
 
@@ -514,8 +522,10 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                 setConfirmDialog({ open: true, warning: res.data.warning, pendingPayload: { ...payload, confirmed: true } });
                 return;
             }
-            toast.success('Payment recorded');
+            toast.success(payload.order ? 'Order settlement recorded' : 'Payment recorded');
             setForm(emptyPayment);
+            setSelectedOrder('');
+            setOrderAmount('');
             fetchPayments();
             setOutstandingRefresh(r => r + 1);
             if (onPaymentRecorded) onPaymentRecorded();
@@ -528,6 +538,21 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
         e.preventDefault();
         const errs = validateForm();
         if (Object.keys(errs).length) { setFormErr(errs); return; }
+
+        // Order mode: the server derives which units the amount covers from
+        // the order's own outstanding lines, so only the amount is sent.
+        if (mode === 'order') {
+            submitPayment({
+                customer: customerId,
+                order: selectedOrder,
+                amount: orderPayAmount,
+                paymentDate: form.paymentDate,
+                ...(form.referenceNote.trim() && { referenceNote: form.referenceNote.trim() }),
+                ...(activeCountry?._id && { countryId: activeCountry._id }),
+            });
+            return;
+        }
+
         const effectiveAmount = activeItems.length > 0 ? computedAmount : Number(form.amount);
         submitPayment({
             customer: customerId,
@@ -560,6 +585,53 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
 
     return (
         <div>
+            {/* Per-order settlement status */}
+            {orderStates.length > 0 && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1E293B', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <FiShoppingCart size={14} /> Orders
+                        <span style={{ color: '#94A3B8', fontSize: '0.78rem', fontWeight: 400 }}>
+                            ({unsettledOrders.length} of {orderStates.length} still owing)
+                        </span>
+                    </div>
+                    <div className="table-container">
+                        <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                            <thead>
+                                <tr>
+                                    <th>Order</th>
+                                    <th>Date</th>
+                                    <th style={{ textAlign: 'right' }}>Total</th>
+                                    <th style={{ textAlign: 'right' }}>Paid</th>
+                                    <th style={{ textAlign: 'right' }}>Remaining</th>
+                                    <th style={{ textAlign: 'right' }}>Units Left</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {orderStates.map((o) => {
+                                    const unitsLeft = o.lines.reduce((a, l) => a + l.outstandingQty, 0);
+                                    return (
+                                        <tr key={o.orderId} style={{ background: o.settlementStatus === 'SETTLED' ? '#F0FDF4' : undefined }}>
+                                            <td style={{ fontWeight: 600 }}>#{o.orderNumber}</td>
+                                            <td style={{ whiteSpace: 'nowrap', color: '#64748B' }}>{fmtDate(o.date)}</td>
+                                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(o.totalAmount)}</td>
+                                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: '#10B981', fontWeight: 600 }}>{fmt(o.paidAmount)}</td>
+                                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700, color: o.remainingAmount > 0 ? '#DC2626' : '#10B981' }}>
+                                                {fmt(o.remainingAmount)}
+                                            </td>
+                                            <td style={{ textAlign: 'right', color: unitsLeft > 0 ? '#EA580C' : '#94A3B8', fontWeight: unitsLeft > 0 ? 600 : 400 }}>
+                                                {unitsLeft > 0 ? unitsLeft.toLocaleString() : '—'}
+                                            </td>
+                                            <td><OrderStatusBadge status={o.settlementStatus} /></td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
             {/* Outstanding products summary */}
             {/* {outstandingProducts.length > 0 && (
                 <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
@@ -587,9 +659,77 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
 
             {/* Record payment form */}
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem' }}>
-                <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 600, color: '#1E293B' }}>Record Payment</h3>
+                <h3 style={{ margin: '0 0 0.85rem 0', fontSize: '1rem', fontWeight: 600, color: '#1E293B' }}>Record Payment</h3>
+
+                {/* Settle loose quantities, or one order outright */}
+                <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.1rem', flexWrap: 'wrap' }}>
+                    {[
+                        { key: 'product', label: 'By product', hint: 'Settle quantities across all orders' },
+                        { key: 'order', label: 'By order', hint: 'Settle one order in full or in part' },
+                    ].map((m) => (
+                        <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => { setMode(m.key); setFormErr({}); }}
+                            title={m.hint}
+                            style={{
+                                padding: '0.45rem 0.95rem',
+                                borderRadius: '8px',
+                                fontSize: '0.85rem',
+                                fontWeight: mode === m.key ? 700 : 500,
+                                cursor: 'pointer',
+                                border: `1px solid ${mode === m.key ? '#4880FF' : '#E2E8F0'}`,
+                                background: mode === m.key ? '#EFF6FF' : '#fff',
+                                color: mode === m.key ? '#1D4ED8' : '#64748B',
+                            }}
+                        >
+                            {m.label}
+                        </button>
+                    ))}
+                </div>
+
                 <form onSubmit={handleSubmit} noValidate>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                        {mode === 'order' ? (
+                            <>
+                                <div className="form-group" style={{ margin: 0 }}>
+                                    <label>Order <span style={{ color: '#DC2626' }}>*</span></label>
+                                    <select
+                                        value={selectedOrder}
+                                        onChange={(e) => { setSelectedOrder(e.target.value); setOrderAmount(''); setFormErr((fe) => ({ ...fe, order: undefined, orderAmount: undefined })); }}
+                                        style={formErr.order ? { borderColor: '#DC2626' } : {}}
+                                    >
+                                        <option value="">Select an unsettled order…</option>
+                                        {unsettledOrders.map((o) => (
+                                            <option key={o.orderId} value={o.orderId}>
+                                                #{o.orderNumber} — {fmtDate(o.date)} — {fmt(o.remainingAmount)} left
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {formErr.order && <small style={{ color: '#DC2626' }}>{formErr.order}</small>}
+                                    {unsettledOrders.length === 0 && (
+                                        <small style={{ color: '#10B981' }}>Every order is settled.</small>
+                                    )}
+                                </div>
+                                <div className="form-group" style={{ margin: 0 }}>
+                                    <label>
+                                        Amount ({symbol})
+                                        <span style={{ marginLeft: '0.4rem', fontSize: '0.75rem', color: '#94A3B8', fontWeight: 400 }}>
+                                            blank = settle in full
+                                        </span>
+                                    </label>
+                                    <input
+                                        type="number" min="0.01" step="0.01"
+                                        value={orderAmount}
+                                        disabled={!activeOrder}
+                                        onChange={(e) => { setOrderAmount(e.target.value); setFormErr((fe) => ({ ...fe, orderAmount: undefined })); }}
+                                        placeholder={activeOrder ? activeOrder.remainingAmount.toFixed(2) : '0.00'}
+                                        style={formErr.orderAmount ? { borderColor: '#DC2626' } : {}}
+                                    />
+                                    {formErr.orderAmount && <small style={{ color: '#DC2626' }}>{formErr.orderAmount}</small>}
+                                </div>
+                            </>
+                        ) : (
                         <div className="form-group" style={{ margin: 0 }}>
                             <label>
                                 Amount ({symbol}) <span style={{ color: '#DC2626' }}>*</span>
@@ -609,6 +749,7 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                             />
                             {formErr.amount && <small style={{ color: '#DC2626' }}>{formErr.amount}</small>}
                         </div>
+                        )}
                         <div className="form-group" style={{ margin: 0 }}>
                             <label>Payment Date <span style={{ color: '#DC2626' }}>*</span></label>
                             <input type="date" value={form.paymentDate}
@@ -624,7 +765,70 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                         </div>
                     </div>
 
+                    {/* What settling the picked order will do */}
+                    {mode === 'order' && activeOrder && (
+                        <div style={{ marginTop: '1.25rem', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '1rem 1.15rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.85rem' }}>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1E293B' }}>
+                                    Order #{activeOrder.orderNumber}
+                                    <span style={{ marginLeft: '0.5rem', fontWeight: 400, color: '#64748B', fontSize: '0.82rem' }}>
+                                        {fmtDate(activeOrder.date)}
+                                    </span>
+                                </div>
+                                <OrderStatusBadge status={activeOrder.settlementStatus} />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem', marginBottom: '0.9rem' }}>
+                                {[
+                                    { label: 'Order total', value: fmt(activeOrder.totalAmount), color: '#1E293B' },
+                                    { label: 'Already paid', value: fmt(activeOrder.paidAmount), color: '#10B981' },
+                                    { label: 'Still owed', value: fmt(activeOrder.remainingAmount), color: '#DC2626' },
+                                    { label: 'Paying now', value: fmt(orderPayAmount || 0), color: '#1D4ED8' },
+                                ].map((s) => (
+                                    <div key={s.label}>
+                                        <div style={{ fontSize: '0.7rem', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{s.label}</div>
+                                        <div style={{ fontSize: '0.98rem', fontWeight: 700, color: s.color }}>{s.value}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="table-container">
+                                <table className="data-table" style={{ fontSize: '0.83rem' }}>
+                                    <thead>
+                                        <tr>
+                                            <th>Product</th>
+                                            <th style={{ textAlign: 'right' }}>Unit Price</th>
+                                            <th style={{ textAlign: 'right' }}>Ordered</th>
+                                            <th style={{ textAlign: 'right' }}>Outstanding</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {activeOrder.lines.map((l) => (
+                                            <tr key={l.product} style={{ background: l.outstandingQty === 0 ? '#F0FDF4' : undefined }}>
+                                                <td>{l.name || l.product}</td>
+                                                <td style={{ textAlign: 'right', color: '#475569', whiteSpace: 'nowrap' }}>{l.price ? fmt(l.price) : '—'}</td>
+                                                <td style={{ textAlign: 'right', color: '#64748B' }}>{l.quantity.toLocaleString()}</td>
+                                                <td style={{ textAlign: 'right', fontWeight: 600, color: l.outstandingQty > 0 ? '#EA580C' : '#10B981' }}>
+                                                    {l.outstandingQty > 0 ? `${l.outstandingQty.toLocaleString()} units` : 'Settled'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#64748B', lineHeight: 1.5 }}>
+                                {isPartial ? (
+                                    <>Part-payment: whole units this amount covers are settled from the top of the list down; the rest stays outstanding.</>
+                                ) : (
+                                    <>Settles this order in full — every outstanding unit above is cleared and the order's balance goes to {fmt(0)}.</>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Product settlement table */}
+                    {mode === 'product' && (
                     <div style={{ marginTop: '1.25rem' }}>
                         <div style={{ marginBottom: '0.6rem' }}>
                             <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1E293B' }}>
@@ -698,11 +902,18 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                         )}
                         {formErr.items && <small style={{ color: '#DC2626', display: 'block', marginBottom: '0.25rem' }}>{formErr.items}</small>}
                     </div>
+                    )}
 
                     <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
-                        <button type="submit" className="btn btn-primary" disabled={submitting}
+                        <button type="submit" className="btn btn-primary"
+                            disabled={submitting || (mode === 'order' && !selectedOrder)}
                             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <FiCheck size={14} /> {submitting ? 'Recording...' : 'Record Payment'}
+                            <FiCheck size={14} />
+                            {submitting
+                                ? 'Recording...'
+                                : mode === 'order'
+                                    ? (isPartial ? 'Record Part-Payment' : 'Settle Order')
+                                    : 'Record Payment'}
                         </button>
                     </div>
                 </form>
@@ -719,6 +930,7 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                             <tr>
                                 <th>Date</th>
                                 <th style={{ textAlign: 'right' }}>Amount</th>
+                                <th>Applied To</th>
                                 <th>Products Settled</th>
                                 <th>Reference Note</th>
                                 <th>Recorded By</th>
@@ -731,6 +943,18 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                                     <tr key={p._id}>
                                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(p.paymentDate)}</td>
                                         <td style={{ textAlign: 'right', fontWeight: 700, color: '#10B981' }}>{fmt(p.amount)}</td>
+                                        <td>
+                                            {p.order ? (
+                                                <span style={{
+                                                    padding: '2px 9px', borderRadius: '99px', fontSize: '0.72rem',
+                                                    fontWeight: 700, background: '#DBEAFE', color: '#1D4ED8', whiteSpace: 'nowrap',
+                                                }}>
+                                                    Order #{p.order.orderNumber ?? '—'}
+                                                </span>
+                                            ) : (
+                                                <span style={{ color: '#94A3B8', fontSize: '0.82rem' }}>Account</span>
+                                            )}
+                                        </td>
                                         <td>
                                             {p.items && p.items.length > 0 ? (
                                                 <button
@@ -754,7 +978,7 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                                     </tr>
                                     {expandedPayment === p._id && p.items?.length > 0 && (
                                         <tr key={`${p._id}-items`}>
-                                            <td colSpan={isAdmin ? 6 : 5} style={{ padding: '0 1rem 0.75rem 1rem', background: '#F8FAFC' }}>
+                                            <td colSpan={isAdmin ? 7 : 6} style={{ padding: '0 1rem 0.75rem 1rem', background: '#F8FAFC' }}>
                                                 <table style={{ width: '100%', fontSize: '0.83rem', borderCollapse: 'collapse' }}>
                                                     <thead>
                                                         <tr style={{ color: '#64748B' }}>

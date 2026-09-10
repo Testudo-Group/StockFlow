@@ -28,6 +28,19 @@ const sorPaymentSchema = new mongoose.Schema(
             ref: 'SORCustomer',
             required: [true, 'Customer is required'],
         },
+        // Set when the payment settles one specific order rather than loose
+        // product quantities. Left unset for customer-level settlements, which
+        // are allocated oldest-order-first when balances are computed.
+        order: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Order',
+            default: null,
+        },
+        settlementType: {
+            type: String,
+            enum: ['PRODUCT', 'ORDER'],
+            default: 'PRODUCT',
+        },
         amount: {
             type: Number,
             required: [true, 'Amount is required'],
@@ -57,5 +70,9 @@ const sorPaymentSchema = new mongoose.Schema(
 
 // Index for efficient lookup by customer sorted by most recent payment
 sorPaymentSchema.index({ customer: 1, paymentDate: -1 });
+// Settlement allocation replays payments oldest-first per customer
+sorPaymentSchema.index({ customer: 1, paymentDate: 1, createdAt: 1 });
+// Lookup of everything paid against one order
+sorPaymentSchema.index({ order: 1 });
 
 module.exports = mongoose.model('SORPayment', sorPaymentSchema);

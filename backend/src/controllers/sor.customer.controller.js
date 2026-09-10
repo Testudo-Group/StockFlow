@@ -2,6 +2,7 @@ const SORCustomer = require('../models/SORCustomer');
 const SOROrder = require('../models/SOROrder');
 const SORPayment = require('../models/SORPayment');
 const { computeLiability, getLedger, getSummary } = require('../services/sor.paymentTracker.service');
+const { computeSettlement } = require('../services/sor.settlement.service');
 const { exportCSV } = require('../services/sor.ledgerExport.service');
 const { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } = require('../config/constants');
 
@@ -191,6 +192,25 @@ exports.getCustomerLedger = async (req, res, next) => {
         const ledger = await getLedger(customer._id);
 
         res.status(200).json({ success: true, count: ledger.length, data: ledger });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Get per-order and per-product settlement state for a customer
+// @route   GET /api/sor/customers/:id/settlement
+// @access  Staff
+exports.getCustomerSettlement = async (req, res, next) => {
+    try {
+        const customer = await SORCustomer.findOne({ _id: req.params.id, countryId: req.countryId });
+
+        if (!customer) {
+            return res.status(404).json({ success: false, message: 'SOR customer not found' });
+        }
+
+        const settlement = await computeSettlement(customer._id);
+
+        res.status(200).json({ success: true, data: settlement });
     } catch (error) {
         next(error);
     }

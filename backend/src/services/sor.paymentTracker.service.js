@@ -72,6 +72,7 @@ async function getLedger(customerId) {
 
     // Fetch all SOR payments for the customer
     const sorPayments = await SORPayment.find({ customer: customerObjectId })
+        .populate('order', 'orderNumber')
         .populate('items.product', 'name sku');
 
     // Map orders to ledger entries (positive amounts)
@@ -84,14 +85,19 @@ async function getLedger(customerId) {
             amount: so.order.totalAmount,
         }));
 
-    // Map payments to ledger entries (negative amounts), include settled items
-    const paymentEntries = sorPayments.map(p => ({
-        date: p.paymentDate,
-        type: 'PAYMENT',
-        reference: p.referenceNote || '',
-        amount: -p.amount,
-        items: p.items || [],
-    }));
+    // Map payments to ledger entries (negative amounts), include settled items.
+    // A payment against one order names it, so the ledger shows what it cleared.
+    const paymentEntries = sorPayments.map(p => {
+        const orderRef = p.order?.orderNumber ? `Order #${p.order.orderNumber}` : '';
+        const note = p.referenceNote || '';
+        return {
+            date: p.paymentDate,
+            type: 'PAYMENT',
+            reference: [orderRef, note].filter(Boolean).join(' — '),
+            amount: -p.amount,
+            items: p.items || [],
+        };
+    });
 
     // Merge and sort chronologically ascending
     const merged = [...orderEntries, ...paymentEntries].sort(

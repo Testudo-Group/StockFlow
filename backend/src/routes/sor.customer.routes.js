@@ -7,6 +7,7 @@ const {
     deleteCustomer,
     getCustomerLedger,
     exportCustomerLedger,
+    getCustomerSettlement,
 } = require('../controllers/sor.customer.controller');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
@@ -29,6 +30,10 @@ router
 router
     .route('/:id/ledger/export')
     .get(authorize(...STAFF_ROLES), exportCustomerLedger);
+
+router
+    .route('/:id/settlement')
+    .get(authorize(...STAFF_ROLES), getCustomerSettlement);
 
 router
     .route('/:id/ledger')
