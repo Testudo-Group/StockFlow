@@ -99,6 +99,14 @@ const orderSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
+        // Currency snapshot taken at creation. Receipts and invoices reprint in
+        // the currency the order was actually priced in, even if the country's
+        // currency details are edited later.
+        currency: {
+            code: { type: String, trim: true, uppercase: true },
+            symbol: { type: String, trim: true },
+            locale: { type: String, trim: true },
+        },
     },
     {
         timestamps: true,

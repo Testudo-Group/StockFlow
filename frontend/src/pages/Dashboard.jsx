@@ -9,10 +9,12 @@ import { FiShoppingCart, FiAward, FiTarget, FiActivity, FiUser } from 'react-ico
 import api from '../utils/api';
 import Spinner from '../components/Spinner';
 import ExportButton from '../components/ExportButton';
+import useCurrency from '../hooks/useCurrency';
 
 const Dashboard = () => {
     const { user } = useAuth();
     const { activeCountry } = useCountry();
+    const { formatShort, symbol } = useCurrency();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [trendPeriod, setTrendPeriod] = useState('past30'); // Changed from trendDays
@@ -241,7 +243,7 @@ const Dashboard = () => {
                             columns={[
                                 { key: 'customerName', label: 'Customer Name' },
                                 { key: 'orderCount', label: 'Orders' },
-                                { key: 'totalSpent', label: 'Total Spent (₦)' },
+                                { key: 'totalSpent', label: `Total Spent (${symbol})` },
                                 { key: 'lastOrder', label: 'Last Order' }
                             ]}
                             filename={`top-customers-${new Date().toISOString().split('T')[0]}`}
@@ -272,7 +274,7 @@ const Dashboard = () => {
                                             </div>
                                         </td>
                                         <td>{customer.orderCount}</td>
-                                        <td style={{ fontWeight: 600, color: '#1E2640' }}>₦{(customer.totalSpent || 0).toLocaleString()}</td>
+                                        <td style={{ fontWeight: 600, color: '#1E2640' }}>{formatShort(customer.totalSpent || 0)}</td>
                                         <td style={{ color: '#6B7A99' }}>{new Date(customer.lastOrder).toLocaleDateString()}</td>
                                     </tr>
                                 ))

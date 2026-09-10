@@ -9,12 +9,14 @@ import {
 import { FiDollarSign, FiTrendingUp, FiPackage, FiShoppingCart, FiAlertCircle, FiFilter } from 'react-icons/fi';
 import Spinner from '../components/Spinner';
 import ExportButton from '../components/ExportButton';
+import useCurrency from '../hooks/useCurrency';
 
 const COLORS = ['#4880FF', '#10B981', '#64748B', '#8B5CF6', '#F59E0B', '#EC4899'];
 
 const Financials = () => {
     const { user } = useAuth();
     const { activeCountry } = useCountry();
+    const { symbol } = useCurrency();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
@@ -63,7 +65,7 @@ const Financials = () => {
     };
 
     const formatCurrency = (value) => {
-        return `₦${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}`;
+        return `${symbol}${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}`;
     };
 
     const formatNumber = (value) => {
@@ -370,7 +372,7 @@ const Financials = () => {
                                         { key: 'warehouse', label: 'Warehouse' },
                                         { key: 'totalUnits', label: 'Total Units' },
                                         { key: 'totalCBM', label: 'Total CBM (m³)' },
-                                        { key: 'totalValue', label: 'Total Value (₦)' },
+                                        { key: 'totalValue', label: `Total Value (${symbol})` },
                                         { key: 'percentOfTotal', label: '% of Total Inventory' }
                                     ]}
                                     filename={`inventory-by-warehouse-${new Date().toISOString().split('T')[0]}`}
@@ -440,7 +442,7 @@ const Financials = () => {
                                             { key: 'brand', label: 'Brand' },
                                             { key: 'units', label: 'Units' },
                                             { key: 'cbm', label: 'CBM (m³)' },
-                                            { key: 'totalValue', label: 'Total Value (₦)' }
+                                            { key: 'totalValue', label: `Total Value (${symbol})` }
                                         ]}
                                         filename={`inventory-by-brand-${new Date().toISOString().split('T')[0]}`}
                                         label="Export"
@@ -486,7 +488,7 @@ const Financials = () => {
                                             { key: 'category', label: 'Category' },
                                             { key: 'units', label: 'Units' },
                                             { key: 'cbm', label: 'CBM (m³)' },
-                                            { key: 'totalValue', label: 'Total Value (₦)' }
+                                            { key: 'totalValue', label: `Total Value (${symbol})` }
                                         ]}
                                         filename={`inventory-by-category-${new Date().toISOString().split('T')[0]}`}
                                         label="Export"
@@ -536,8 +538,8 @@ const Financials = () => {
                                         { key: 'productName', label: 'Product Name' },
                                         { key: 'quantity', label: 'Quantity' },
                                         { key: 'cbm', label: 'CBM (m³)' },
-                                        { key: 'unitPrice', label: 'Unit Price (₦)' },
-                                        { key: 'totalValue', label: 'Total Value (₦)' }
+                                        { key: 'unitPrice', label: `Unit Price (${symbol})` },
+                                        { key: 'totalValue', label: `Total Value (${symbol})` }
                                     ]}
                                     filename={`top-products-by-value-${new Date().toISOString().split('T')[0]}`}
                                     label="Export"
@@ -591,8 +593,8 @@ const Financials = () => {
                                     columns={[
                                         { key: 'warehouse', label: 'Warehouse' },
                                         { key: 'totalOrders', label: 'Total Orders' },
-                                        { key: 'totalRevenue', label: 'Total Revenue (₦)' },
-                                        { key: 'avgOrderValue', label: 'Avg Order Value (₦)' }
+                                        { key: 'totalRevenue', label: `Total Revenue (${symbol})` },
+                                        { key: 'avgOrderValue', label: `Avg Order Value (${symbol})` }
                                     ]}
                                     filename={`sales-by-warehouse-${new Date().toISOString().split('T')[0]}`}
                                     label="Export"
@@ -650,7 +652,7 @@ const Financials = () => {
                                         columns={[
                                             { key: 'category', label: 'Category' },
                                             { key: 'unitsSold', label: 'Units Sold' },
-                                            { key: 'revenue', label: 'Revenue (₦)' }
+                                            { key: 'revenue', label: `Revenue (${symbol})` }
                                         ]}
                                         filename={`sales-by-category-${new Date().toISOString().split('T')[0]}`}
                                         label="Export"
@@ -698,8 +700,8 @@ const Financials = () => {
                                         { key: 'sku', label: 'SKU' },
                                         { key: 'productName', label: 'Product Name' },
                                         { key: 'unitsSold', label: 'Units Sold' },
-                                        { key: 'avgPrice', label: 'Avg Price (₦)' },
-                                        { key: 'totalRevenue', label: 'Total Revenue (₦)' }
+                                        { key: 'avgPrice', label: `Avg Price (${symbol})` },
+                                        { key: 'totalRevenue', label: `Total Revenue (${symbol})` }
                                     ]}
                                     filename={`top-selling-products-${new Date().toISOString().split('T')[0]}`}
                                     label="Export"
@@ -809,9 +811,9 @@ const Financials = () => {
                                     columns={[
                                         { key: 'brand', label: 'Brand' },
                                         { key: 'inventoryUnits', label: 'Inventory Units' },
-                                        { key: 'inventoryValue', label: 'Inventory Value (₦)' },
+                                        { key: 'inventoryValue', label: `Inventory Value (${symbol})` },
                                         { key: 'unitsSold', label: 'Units Sold' },
-                                        { key: 'salesRevenue', label: 'Sales Revenue (₦)' },
+                                        { key: 'salesRevenue', label: `Sales Revenue (${symbol})` },
                                         { key: 'turnoverPercent', label: 'Turnover %' }
                                     ]}
                                     filename={`brand-performance-${new Date().toISOString().split('T')[0]}`}
@@ -1046,7 +1048,7 @@ const Financials = () => {
                                         columns={[
                                             { key: 'period', label: 'Period' },
                                             { key: 'orders', label: 'Orders' },
-                                            { key: 'revenue', label: 'Revenue (₦)' }
+                                            { key: 'revenue', label: `Revenue (${symbol})` }
                                         ]}
                                         filename={`revenue-trends-${new Date().toISOString().split('T')[0]}`}
                                         label="Export"

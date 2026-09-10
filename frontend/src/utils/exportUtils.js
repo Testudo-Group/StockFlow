@@ -1,5 +1,7 @@
 // Utility functions for exporting table data to CSV and Excel
 
+import { formatCurrency as currencyFormat } from './currency';
+
 /**
  * Convert array of objects to CSV string
  * @param {Array} data - Array of objects to convert
@@ -129,9 +131,16 @@ export const formatNumber = (num) => {
 };
 
 /**
- * Format currency
+ * Format currency for an export.
+ *
+ * The country is required — exported figures are in whatever currency the
+ * active country uses, and there is no conversion between them, so a default
+ * symbol here would silently mislabel another market's amounts.
+ *
+ * @param {number} num
+ * @param {object} country  Country object from CountryContext
  */
-export const formatCurrency = (num) => {
+export const formatCurrency = (num, country) => {
     if (num === null || num === undefined) return '';
-    return `₦${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return currencyFormat(num, country, { emptyValue: '' });
 };

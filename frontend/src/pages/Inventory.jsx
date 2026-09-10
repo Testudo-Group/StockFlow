@@ -10,10 +10,12 @@ import StockAdjustmentModal from '../components/StockAdjustmentModal';
 import StockHistoryModal from '../components/StockHistoryModal';
 import StockTransferModal from '../components/StockTransferModal';
 import ExportButton from '../components/ExportButton';
+import useCurrency from '../hooks/useCurrency';
 
 const Inventory = () => {
     const { user } = useAuth();
     const { activeCountry } = useCountry();
+    const { format, symbol } = useCurrency();
     const [balances, setBalances] = useState([]);
     const [warehouses, setWarehouses] = useState([]);
     const [products, setProducts] = useState([]);
@@ -50,7 +52,7 @@ const Inventory = () => {
             const countryParam = activeCountry?._id ? `?countryId=${activeCountry._id}` : '';
             const [whRes, prodRes, catRes, brandRes] = await Promise.all([
                 api.get(`/warehouses${countryParam}`),
-                api.get('/products?limit=1000'),
+                api.get(`/products?limit=1000&countryId=${activeCountry._id}&includeUnpriced=true`),
                 api.get('/categories'),
                 api.get('/brands')
             ]);
@@ -248,7 +250,7 @@ const Inventory = () => {
 
         // Only include value column for ADMIN users
         if (user?.role === ROLES.ADMIN) {
-            columns.push({ key: 'value', label: 'Total Value (₦)' });
+            columns.push({ key: 'value', label: `Total Value (${symbol})` });
         }
 
         columns.push({ key: 'cbm', label: 'Total CBM (m³)' });
@@ -458,7 +460,7 @@ const Inventory = () => {
                                         {user?.role === ROLES.ADMIN && (
                                             <td>
                                                 <span style={{ fontWeight: 600, color: '#10B981' }}>
-                                                    ₦{calculateValue(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    {format(calculateValue(bal))}
                                                 </span>
                                             </td>
                                         )}
@@ -516,8 +518,7 @@ const Inventory = () => {
                                     </td>
                                     {user?.role === ROLES.ADMIN && (
                                         <td>
-                                            ₦{balances.reduce((sum, b) => sum + calculateValue(b), 0)
-                                                .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {format(balances.reduce((sum, b) => sum + calculateValue(b), 0))}
                                         </td>
                                     )}
                                     <td>

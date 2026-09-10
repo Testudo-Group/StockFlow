@@ -12,12 +12,25 @@ const CountrySettings = () => {
 
     const [countries, setCountries] = useState([]);
     const [loadingAll, setLoadingAll] = useState(true);
-    const [newCountry, setNewCountry] = useState({ name: '', isoCode: '' });
+    const [newCountry, setNewCountry] = useState({
+        name: '',
+        isoCode: '',
+        // Blank currency fields are filled in by the server from the ISO code.
+        currencyCode: '',
+        currencySymbol: '',
+    });
     const [saving, setSaving] = useState(false);
 
     // Edit modal state
     const [editingCountry, setEditingCountry] = useState(null);
-    const [editForm, setEditForm] = useState({ name: '', isoCode: '' });
+    const [editForm, setEditForm] = useState({
+        name: '',
+        isoCode: '',
+        currencyCode: '',
+        currencySymbol: '',
+        currencyName: '',
+        locale: '',
+    });
     const [editSaving, setEditSaving] = useState(false);
 
     // User assignments state
@@ -91,7 +104,7 @@ const CountrySettings = () => {
             setSaving(true);
             const response = await api.post('/countries', newCountry);
             setCountries((prev) => [...prev, response.data.data]);
-            setNewCountry({ name: '', isoCode: '' });
+            setNewCountry({ name: '', isoCode: '', currencyCode: '', currencySymbol: '' });
             toast.success('Country added');
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to add country');
@@ -120,12 +133,19 @@ const CountrySettings = () => {
 
     const openEdit = (country) => {
         setEditingCountry(country);
-        setEditForm({ name: country.name, isoCode: country.isoCode });
+        setEditForm({
+            name: country.name,
+            isoCode: country.isoCode,
+            currencyCode: country.currencyCode || '',
+            currencySymbol: country.currencySymbol || '',
+            currencyName: country.currencyName || '',
+            locale: country.locale || '',
+        });
     };
 
     const closeEdit = () => {
         setEditingCountry(null);
-        setEditForm({ name: '', isoCode: '' });
+        setEditForm({ name: '', isoCode: '', currencyCode: '', currencySymbol: '', currencyName: '', locale: '' });
     };
 
     const handleEditSave = async (e) => {
@@ -134,11 +154,23 @@ const CountrySettings = () => {
             toast.error('Name and ISO code are required');
             return;
         }
+        if (!editForm.currencyCode.trim() || !editForm.currencySymbol.trim()) {
+            toast.error('Currency code and symbol are required');
+            return;
+        }
+        if (editForm.currencyCode.trim().length !== 3) {
+            toast.error('Currency code must be a 3-letter ISO 4217 code (e.g. GHS)');
+            return;
+        }
         try {
             setEditSaving(true);
             const response = await api.patch(`/countries/${editingCountry._id}`, {
                 name: editForm.name.trim(),
                 isoCode: editForm.isoCode.trim().toUpperCase(),
+                currencyCode: editForm.currencyCode.trim().toUpperCase(),
+                currencySymbol: editForm.currencySymbol.trim(),
+                currencyName: editForm.currencyName.trim(),
+                locale: editForm.locale.trim() || 'en-US',
             });
             setCountries((prev) =>
                 prev.map((c) => (c._id === editingCountry._id ? response.data.data : c))
@@ -200,6 +232,7 @@ const CountrySettings = () => {
                         <tr>
                             <th>Country</th>
                             <th>ISO Code</th>
+                            <th>Currency</th>
                             <th>Status</th>
                             <th>Default</th>
                             <th>Active</th>
@@ -214,6 +247,18 @@ const CountrySettings = () => {
                                     <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#64748B' }}>
                                         {country.isoCode}
                                     </span>
+                                </td>
+                                <td>
+                                    {country.currencyCode ? (
+                                        <span style={{ fontSize: '0.85rem', color: '#1E293B' }}>
+                                            <strong style={{ fontSize: '1rem' }}>{country.currencySymbol}</strong>
+                                            <span style={{ marginLeft: '6px', fontFamily: 'monospace', color: '#64748B' }}>
+                                                {country.currencyCode}
+                                            </span>
+                                        </span>
+                                    ) : (
+                                        <span style={{ fontSize: '0.78rem', color: '#B45309' }}>Not set</span>
+                                    )}
                                 </td>
                                 <td>
                                     <span style={{
@@ -287,9 +332,37 @@ const CountrySettings = () => {
                                 style={{ width: '100px' }}
                             />
                         </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#64748B' }}>Currency Code</label>
+                            <input
+                                type="text"
+                                placeholder="auto (e.g. GHS)"
+                                value={newCountry.currencyCode}
+                                onChange={(e) => setNewCountry((p) => ({ ...p, currencyCode: e.target.value.toUpperCase() }))}
+                                maxLength={3}
+                                className="form-input"
+                                style={{ width: '140px' }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#64748B' }}>Symbol</label>
+                            <input
+                                type="text"
+                                placeholder="auto"
+                                value={newCountry.currencySymbol}
+                                onChange={(e) => setNewCountry((p) => ({ ...p, currencySymbol: e.target.value }))}
+                                maxLength={6}
+                                className="form-input"
+                                style={{ width: '90px' }}
+                            />
+                        </div>
                         <button type="submit" className="btn btn-primary" disabled={saving}>
                             {saving ? 'Adding...' : 'Add Country'}
                         </button>
+                        <p style={{ width: '100%', margin: '0.5rem 0 0', fontSize: '0.78rem', color: '#94A3B8' }}>
+                            Leave currency blank to use the standard currency for that ISO code.
+                            Prices are entered separately per country and are never converted.
+                        </p>
                     </form>
                 </div>
             </div>
@@ -378,6 +451,72 @@ const CountrySettings = () => {
                                     disabled={editingCountry.isDefault}
                                 />
                             </div>
+                            <div
+                                style={{
+                                    marginTop: '0.5rem',
+                                    paddingTop: '0.75rem',
+                                    borderTop: '1px solid #E2E8F0',
+                                }}
+                            >
+                                <h3 style={{ fontSize: '0.85rem', fontWeight: 600, margin: '0 0 0.25rem' }}>
+                                    Currency
+                                </h3>
+                                <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: '0 0 0.75rem' }}>
+                                    Used to display every amount for this country. Changing it relabels
+                                    figures — it does not convert them.
+                                </p>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    <div className="form-group" style={{ margin: 0 }}>
+                                        <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Code</label>
+                                        <input
+                                            type="text"
+                                            value={editForm.currencyCode}
+                                            onChange={(e) => setEditForm((p) => ({ ...p, currencyCode: e.target.value.toUpperCase() }))}
+                                            className="form-input"
+                                            placeholder="e.g. GHS"
+                                            maxLength={3}
+                                        />
+                                    </div>
+                                    <div className="form-group" style={{ margin: 0 }}>
+                                        <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Symbol</label>
+                                        <input
+                                            type="text"
+                                            value={editForm.currencySymbol}
+                                            onChange={(e) => setEditForm((p) => ({ ...p, currencySymbol: e.target.value }))}
+                                            className="form-input"
+                                            placeholder="e.g. ₵"
+                                            maxLength={6}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Currency Name</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.currencyName}
+                                        onChange={(e) => setEditForm((p) => ({ ...p, currencyName: e.target.value }))}
+                                        className="form-input"
+                                        placeholder="e.g. Ghanaian Cedi"
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Number Format Locale</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.locale}
+                                        onChange={(e) => setEditForm((p) => ({ ...p, locale: e.target.value }))}
+                                        className="form-input"
+                                        placeholder="e.g. en-GH"
+                                    />
+                                    <small style={{ color: '#94A3B8' }}>
+                                        Controls thousands and decimal separators.
+                                    </small>
+                                </div>
+                            </div>
+
                             <div className="modal-actions">
                                 <button type="button" onClick={closeEdit} className="btn btn-secondary" disabled={editSaving}>
                                     Cancel
@@ -385,7 +524,7 @@ const CountrySettings = () => {
                                 <button
                                     type="submit"
                                     className="btn btn-primary"
-                                    disabled={editSaving || editingCountry.isDefault}
+                                    disabled={editSaving}
                                 >
                                     {editSaving ? 'Saving...' : 'Save Changes'}
                                 </button>

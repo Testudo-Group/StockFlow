@@ -6,8 +6,10 @@ import Spinner from '../components/Spinner';
 import PermissionGuard from '../components/PermissionGuard';
 import { PERMISSIONS } from '../utils/constants';
 import ExportButton from '../components/ExportButton';
+import useCurrency from '../hooks/useCurrency';
 
 const Categories = () => {
+    const { symbol } = useCurrency();
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -316,7 +318,7 @@ const Categories = () => {
                                                     <td style={{ fontWeight: 500 }}>{product.name}</td>
                                                     <td>{product.brand?.name || 'N/A'}</td>
                                                     <td style={{ fontWeight: 600 }}>
-                                                        ₦{product.price?.toLocaleString() || '0'}
+                                                        {symbol}{product.price?.toLocaleString() || '0'}
                                                     </td>
                                                     {/* <td>
                                                         <span className={`status-badge ${product.active ? 'active' : 'inactive'}`}>

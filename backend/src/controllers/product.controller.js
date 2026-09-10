@@ -1,5 +1,9 @@
 const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
+const {
+    withResolvedPrice,
+    normaliseCountryPrices,
+} = require('../utils/pricing');
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -18,6 +22,14 @@ exports.getProducts = async (req, res, next) => {
             queryParams.category = req.query.categoryId;
         }
 
+        // Only list products priced in the active country when the caller asks
+        // for it — the Products admin screen passes includeUnpriced=true so
+        // prices can be set for the first time.
+        const countryId = req.query.countryId;
+        if (countryId && req.query.includeUnpriced !== 'true') {
+            queryParams['countryPrices.countryId'] = countryId;
+        }
+
         const total = await Product.countDocuments(queryParams);
         const products = await Product.find(queryParams)
             .populate({
@@ -31,6 +43,12 @@ exports.getProducts = async (req, res, next) => {
             .skip(startIndex)
             .limit(limit);
 
+        // Surface the active country's price at the top level so clients keep
+        // reading `product.price`, with isPriced flagging unpriced products.
+        const data = countryId
+            ? products.map((product) => withResolvedPrice(product, countryId))
+            : products;
+
         res.status(200).json({
             success: true,
             count: products.length,
@@ -40,7 +58,7 @@ exports.getProducts = async (req, res, next) => {
                 limit,
                 totalPages: Math.ceil(total / limit)
             },
-            data: products,
+            data,
         });
     } catch (error) {
         next(error);
@@ -65,7 +83,9 @@ exports.getProduct = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            data: product,
+            data: req.query.countryId
+                ? withResolvedPrice(product, req.query.countryId)
+                : product,
         });
     } catch (error) {
         next(error);
@@ -88,6 +108,15 @@ exports.createProduct = async (req, res, next) => {
                 // Dimensions are stored in meters, so volume = length * breadth * height (m³)
                 req.body.volume = parseFloat(length) * parseFloat(breadth) * parseFloat(height);
             }
+        }
+
+        try {
+            const countryPrices = normaliseCountryPrices(req.body.countryPrices);
+            if (countryPrices !== undefined) {
+                req.body.countryPrices = countryPrices;
+            }
+        } catch (err) {
+            return res.status(400).json({ success: false, message: err.message });
         }
 
         const product = await Product.create(req.body);
@@ -142,6 +171,15 @@ exports.updateProduct = async (req, res, next) => {
             }
         }
 
+        try {
+            const countryPrices = normaliseCountryPrices(req.body.countryPrices);
+            if (countryPrices !== undefined) {
+                req.body.countryPrices = countryPrices;
+            }
+        } catch (err) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+
         const updatedProduct = await Product.findByIdAndUpdate(req.params.id, req.body, {
             new: true,
             runValidators: true,
@@ -150,6 +188,70 @@ exports.updateProduct = async (req, res, next) => {
         res.status(200).json({
             success: true,
             data: updatedProduct,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Set (upsert) the price for one country on a product
+// @route   PATCH /api/products/:id/price
+// @access  Private (Admin/Manager)
+//
+// Touches only the given country's entry, so two admins editing prices for
+// different countries can never clobber each other. Send price: null to clear
+// the entry and make the product unpriced (and unorderable) in that country.
+exports.setProductCountryPrice = async (req, res, next) => {
+    try {
+        const { countryId, price, wholesaleCost } = req.body;
+
+        if (!countryId) {
+            return res.status(400).json({
+                success: false,
+                message: 'countryId is required',
+            });
+        }
+
+        const product = await Product.findById(req.params.id);
+
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                message: `Product not found with id of ${req.params.id}`,
+            });
+        }
+
+        const target = countryId.toString();
+        const existingIndex = product.countryPrices.findIndex(
+            (cp) => cp.countryId && cp.countryId.toString() === target
+        );
+
+        // price: null clears the country's price entirely
+        if (price === null || price === '') {
+            if (existingIndex !== -1) {
+                product.countryPrices.splice(existingIndex, 1);
+            }
+        } else {
+            let entry;
+            try {
+                [entry] = normaliseCountryPrices([{ countryId, price, wholesaleCost }]);
+            } catch (err) {
+                return res.status(400).json({ success: false, message: err.message });
+            }
+
+            if (existingIndex === -1) {
+                product.countryPrices.push(entry);
+            } else {
+                product.countryPrices[existingIndex].price = entry.price;
+                product.countryPrices[existingIndex].wholesaleCost = entry.wholesaleCost;
+            }
+        }
+
+        await product.save();
+
+        res.status(200).json({
+            success: true,
+            data: withResolvedPrice(product, countryId),
         });
     } catch (error) {
         next(error);

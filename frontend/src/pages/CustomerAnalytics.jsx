@@ -4,9 +4,11 @@ import api from '../utils/api';
 import Spinner from '../components/Spinner';
 import ExportButton from '../components/ExportButton';
 import { useCountry } from '../context/CountryContext';
+import useCurrency from '../hooks/useCurrency';
 
 const CustomerAnalytics = () => {
     const { activeCountry } = useCountry();
+    const { formatShort, symbol } = useCurrency();
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showRecurringOnly, setShowRecurringOnly] = useState(false);
@@ -73,8 +75,8 @@ const CustomerAnalytics = () => {
         { key: 'phone', label: 'Phone' },
         { key: 'email', label: 'Email' },
         { key: 'orderCount', label: 'Total Orders' },
-        { key: 'totalSpent', label: 'Total Spent (₦)' },
-        { key: 'avgOrderValue', label: 'Avg Order Value (₦)' },
+        { key: 'totalSpent', label: `Total Spent (${symbol})` },
+        { key: 'avgOrderValue', label: `Avg Order Value (${symbol})` },
         { key: 'lastOrderDate', label: 'Last Order Date' }
     ];
 
@@ -135,7 +137,7 @@ const CustomerAnalytics = () => {
                                             <div className="cell-secondary">{customer.customerEmail || ''}</div>
                                         </td>
                                         <td>{customer.totalOrders}</td>
-                                        <td>₦{(customer.totalSpent || 0).toLocaleString()}</td>
+                                        <td>{formatShort(customer.totalSpent || 0)}</td>
                                         <td>{new Date(customer.lastOrderDate).toLocaleDateString()}</td>
                                         <td>
                                             <div style={{ maxWidth: '300px' }}>

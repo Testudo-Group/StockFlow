@@ -2,6 +2,7 @@ const Order = require('../models/Order');
 const InventoryBalance = require('../models/InventoryBalance');
 const Product = require('../models/Product');
 const mongoose = require('mongoose');
+const { countryPricingStage } = require('../utils/pricing');
 
 // @desc    Get dashboard analytics
 // @route   GET /api/analytics
@@ -404,11 +405,12 @@ exports.getStats = async (req, res, next) => {
                 },
             },
             { $unwind: '$productInfo' },
+            countryPricingStage('$productInfo', req.countryId),
             {
                 $group: {
                     _id: null,
                     totalQuantity: { $sum: '$quantity' },
-                    totalValue: { $sum: { $multiply: ['$quantity', { $ifNull: ['$productInfo.wholesaleCost', '$productInfo.price'] }] } }
+                    totalValue: { $sum: { $multiply: ['$quantity', '$countryCost'] } }
                 }
             }
         ]);

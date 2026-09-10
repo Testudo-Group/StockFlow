@@ -4,9 +4,12 @@ const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const InventoryBalance = require('../models/InventoryBalance');
 const StockLedger = require('../models/StockLedger');
+const Product = require('../models/Product');
 const ReceiptService = require('./receipt.service');
 const InvoiceService = require('./invoice.service');
 const WhatsAppService = require('./whatsapp.service');
+const { findUnpricedItems } = require('../utils/pricing');
+const { formatMoney } = require('../utils/currency');
 
 /**
  * Immutable fields that must never be overwritten by an edit payload.
@@ -63,6 +66,20 @@ async function editOrder(orderId, updatePayload, userId, countryId) {
             err.statusCode = 400;
             throw err;
         }
+    }
+
+    // Prices are set per country — a product with no price in this order's
+    // country cannot be added to it.
+    const orderCountryId = countryId || order.countryId;
+    const unpriced = await findUnpricedItems(incomingItems, orderCountryId, Product);
+    if (unpriced.length > 0) {
+        const err = new Error(
+            `These products have no price set for this country: ${unpriced
+                .map((p) => p.name)
+                .join(', ')}`
+        );
+        err.statusCode = 400;
+        throw err;
     }
 
     // -------------------------------------------------------------------------
@@ -319,7 +336,9 @@ async function _runSideEffects(populatedOrder) {
                 `✏️ *Order Edited*\n\n` +
                 `Order #${populatedOrder.orderNumber || populatedOrder._id.toString().slice(-6).toUpperCase()}\n` +
                 `Customer: ${populatedOrder.customer?.name || 'N/A'}\n` +
-                `Updated Total: NGN ${(populatedOrder.totalAmount || 0).toLocaleString()}`;
+                `Updated Total: ${formatMoney(populatedOrder.totalAmount || 0, populatedOrder.currency, {
+                    decimals: 0,
+                })}`;
             await WhatsAppService.sendMessage(adminNumber, message);
         }
     } catch (err) {

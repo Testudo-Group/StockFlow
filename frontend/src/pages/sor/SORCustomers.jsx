@@ -5,6 +5,7 @@ import { FiPlus, FiEdit2, FiEye, FiSearch, FiX } from 'react-icons/fi';
 import api from '../../utils/api';
 import Spinner from '../../components/Spinner';
 import { useCountry } from '../../context/CountryContext';
+import useCurrency from '../../hooks/useCurrency';
 
 const LIMIT = 20;
 
@@ -16,12 +17,11 @@ const initialForm = {
     notes: '',
 };
 
-const formatCurrency = (amount) =>
-    `₦${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 const SORCustomers = () => {
     const navigate = useNavigate();
     const { activeCountry } = useCountry();
+    const { format } = useCurrency();
+    const formatCurrency = (amount) => format(Number(amount || 0));
 
     // List state
     const [customers, setCustomers] = useState([]);

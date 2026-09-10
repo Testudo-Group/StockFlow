@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
 const Order = require('../models/Order');
 const SOROrder = require('../models/SOROrder');
+const Product = require('../models/Product');
+const Country = require('../models/Country');
+const { findUnpricedItems } = require('../utils/pricing');
 const StockLedger = require('../models/StockLedger');
 const InventoryBalance = require('../models/InventoryBalance');
 const WhatsAppService = require('../services/whatsapp.service');
@@ -20,6 +23,24 @@ exports.createOrder = async (req, res, next) => {
 
         const { customer, region, warehouse, items, subtotal, discountAmount, discountType, deliveryFee, orderType, channel } = req.body;
 
+        // Prices are set per country — a product with no price in this country
+        // cannot be sold here, so reject rather than guess a price.
+        const unpriced = await findUnpricedItems(items, req.countryId, Product);
+        if (unpriced.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `These products have no price set for this country: ${unpriced
+                    .map((p) => p.name)
+                    .join(', ')}`,
+                unpricedProducts: unpriced,
+            });
+        }
+
+        // Snapshot the currency so receipts reprint correctly later
+        const country = await Country.findById(req.countryId).select(
+            'currencyCode currencySymbol locale'
+        );
+
         // Calculate total if prices provided (simple mock for now)
         const totalAmount = items.reduce((acc, item) => acc + (item.price || 0) * item.quantity, 0) + (deliveryFee || 0);
 
@@ -36,6 +57,13 @@ exports.createOrder = async (req, res, next) => {
             channel: channel || 'Other',
             totalAmount,
             countryId: req.countryId,
+            currency: country
+                ? {
+                      code: country.currencyCode,
+                      symbol: country.currencySymbol,
+                      locale: country.locale,
+                  }
+                : undefined,
             createdBy: req.user.id,
             status: 'PENDING',
             logs: [{ status: 'PENDING', changedBy: req.user.id }],

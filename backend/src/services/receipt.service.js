@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const { formatMoneyCode } = require('../utils/currency');
 
 /**
  * Receipt Generation Service
@@ -329,11 +330,11 @@ class ReceiptService {
             doc.text(qtyText, 300, currentY, { width: 80, align: 'right' });
             
             // Unit Price
-            doc.text(`NGN ${(item.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            doc.text(formatMoneyCode((item.price || 0), order.currency), 
                      390, currentY, { width: 80, align: 'right' });
             
             // Subtotal
-            doc.text(`NGN ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            doc.text(formatMoneyCode(subtotal, order.currency), 
                      480, currentY, { width: 65, align: 'right' });
             
             currentY += itemHeight + (cartonSize > 1 && cartons > 0 && pieces > 0 ? 5 : 0);
@@ -372,7 +373,7 @@ class ReceiptService {
         if (order.discountAmount > 0 || order.deliveryFee > 0) {
             const rowY = doc.y;
             doc.text('Subtotal:', summaryX, rowY);
-            doc.text(`NGN ${itemsSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            doc.text(formatMoneyCode(itemsSubtotal, order.currency), 
                      valueX, rowY, { width: 95, align: 'right' });
             
             doc.moveDown(0.5);
@@ -383,7 +384,7 @@ class ReceiptService {
             const rowY = doc.y;
             doc.fillColor('#EF4444')
                .text('Discount:', summaryX, rowY);
-            doc.text(`-NGN ${order.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            doc.text(formatMoneyCode(order.discountAmount, order.currency, { negative: true }), 
                      valueX, rowY, { width: 95, align: 'right' })
                .fillColor('#000000');
             
@@ -394,7 +395,7 @@ class ReceiptService {
         if (order.deliveryFee > 0) {
             const rowY = doc.y;
             doc.text('Delivery Fee:', summaryX, rowY);
-            doc.text(`NGN ${order.deliveryFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            doc.text(formatMoneyCode(order.deliveryFee, order.currency), 
                      valueX, rowY, { width: 95, align: 'right' });
             
             doc.moveDown(0.5);
@@ -416,7 +417,7 @@ class ReceiptService {
            .font('Helvetica-Bold')
            .text('TOTAL AMOUNT:', summaryX, totalY);
         doc.fillColor('#4880FF')
-           .text(`NGN ${order.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+           .text(formatMoneyCode(order.totalAmount, order.currency), 
                  valueX, totalY, { width: 95, align: 'right' })
            .fillColor('#000000');
         

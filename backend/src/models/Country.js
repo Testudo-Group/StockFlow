@@ -16,6 +16,31 @@ const countrySchema = new mongoose.Schema(
             trim: true,
             maxlength: [3, 'ISO code cannot be more than 3 characters'],
         },
+        currencyCode: {
+            type: String,
+            required: [true, 'Currency code is required'],
+            uppercase: true,
+            trim: true,
+            minlength: [3, 'Currency code must be 3 characters'],
+            maxlength: [3, 'Currency code must be 3 characters'],
+        },
+        currencySymbol: {
+            type: String,
+            required: [true, 'Currency symbol is required'],
+            trim: true,
+            maxlength: [6, 'Currency symbol cannot be more than 6 characters'],
+        },
+        currencyName: {
+            type: String,
+            trim: true,
+            maxlength: [60, 'Currency name cannot be more than 60 characters'],
+        },
+        // BCP 47 tag used for thousands/decimal separators when formatting.
+        locale: {
+            type: String,
+            trim: true,
+            default: 'en-US',
+        },
         isActive: {
             type: Boolean,
             default: true,

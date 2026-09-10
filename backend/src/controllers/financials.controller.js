@@ -6,6 +6,7 @@ const Category = require('../models/Category');
 const Region = require('../models/Region');
 const Warehouse = require('../models/Warehouse');
 const mongoose = require('mongoose');
+const { countryPricingStage } = require('../utils/pricing');
 
 // @desc    Get comprehensive financial analytics
 // @route   GET /api/financials
@@ -34,6 +35,7 @@ exports.getFinancials = async (req, res, next) => {
                 }
             },
             { $unwind: '$productInfo' },
+            countryPricingStage('$productInfo', req.countryId),
             {
                 $lookup: {
                     from: 'warehouses',
@@ -84,12 +86,12 @@ exports.getFinancials = async (req, res, next) => {
                         $sum: { 
                             $multiply: [
                                 '$quantity', 
-                                { $ifNull: ['$productInfo.wholesaleCost', '$productInfo.price'] }
+                                '$countryCost'
                             ] 
                         } 
                     },
                     totalRetailValue: { 
-                        $sum: { $multiply: ['$quantity', '$productInfo.price'] } 
+                        $sum: { $multiply: ['$quantity', '$countryPrice'] } 
                     }
                 }
             },
@@ -142,6 +144,7 @@ exports.getFinancials = async (req, res, next) => {
                 }
             },
             { $unwind: '$productInfo' },
+            countryPricingStage('$productInfo', req.countryId),
             {
                 $lookup: {
                     from: 'brands',
@@ -191,12 +194,12 @@ exports.getFinancials = async (req, res, next) => {
                         $sum: { 
                             $multiply: [
                                 '$quantity', 
-                                { $ifNull: ['$productInfo.wholesaleCost', '$productInfo.price'] }
+                                '$countryCost'
                             ] 
                         } 
                     },
                     totalRetailValue: { 
-                        $sum: { $multiply: ['$quantity', '$productInfo.price'] } 
+                        $sum: { $multiply: ['$quantity', '$countryPrice'] } 
                     },
                     productCount: { $addToSet: '$product' }
                 }
@@ -229,6 +232,7 @@ exports.getFinancials = async (req, res, next) => {
                 }
             },
             { $unwind: '$productInfo' },
+            countryPricingStage('$productInfo', req.countryId),
             {
                 $lookup: {
                     from: 'categories',
@@ -284,12 +288,12 @@ exports.getFinancials = async (req, res, next) => {
                         $sum: { 
                             $multiply: [
                                 '$quantity', 
-                                { $ifNull: ['$productInfo.wholesaleCost', '$productInfo.price'] }
+                                '$countryCost'
                             ] 
                         } 
                     },
                     totalRetailValue: { 
-                        $sum: { $multiply: ['$quantity', '$productInfo.price'] } 
+                        $sum: { $multiply: ['$quantity', '$countryPrice'] } 
                     }
                 }
             },
@@ -320,6 +324,7 @@ exports.getFinancials = async (req, res, next) => {
                 }
             },
             { $unwind: '$productInfo' },
+            countryPricingStage('$productInfo', req.countryId),
             {
                 $addFields: {
                     calculatedVolume: {
@@ -356,15 +361,15 @@ exports.getFinancials = async (req, res, next) => {
                     sku: '$productInfo.sku',
                     quantity: 1,
                     totalCBM: { $multiply: ['$numCartons', '$finalUnitVolume'] },
-                    unitCost: { $ifNull: ['$productInfo.wholesaleCost', '$productInfo.price'] },
-                    unitPrice: '$productInfo.price',
+                    unitCost: '$countryCost',
+                    unitPrice: '$countryPrice',
                     totalCost: { 
                         $multiply: [
                             '$quantity', 
-                            { $ifNull: ['$productInfo.wholesaleCost', '$productInfo.price'] }
+                            '$countryCost'
                         ] 
                     },
-                    totalRetailValue: { $multiply: ['$quantity', '$productInfo.price'] }
+                    totalRetailValue: { $multiply: ['$quantity', '$countryPrice'] }
                 }
             },
             { $sort: { totalCost: -1 } },
@@ -587,13 +592,14 @@ exports.getFinancials = async (req, res, next) => {
                 }
             },
             { $unwind: '$productInfo' },
+            countryPricingStage('$productInfo', req.countryId),
             {
                 $project: {
                     revenue: { $multiply: ['$items.quantity', '$items.price'] },
                     cost: { 
                         $multiply: [
                             '$items.quantity', 
-                            { $ifNull: ['$productInfo.wholesaleCost', 0] }
+                            '$countryWholesaleCost'
                         ] 
                     }
                 }

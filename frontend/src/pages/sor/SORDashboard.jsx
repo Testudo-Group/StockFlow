@@ -5,9 +5,7 @@ import { FiUsers, FiAlertTriangle, FiDollarSign, FiClock } from 'react-icons/fi'
 import api from '../../utils/api';
 import Spinner from '../../components/Spinner';
 import { useCountry } from '../../context/CountryContext';
-
-const formatCurrency = (amount) =>
-    `₦${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+import useCurrency from '../../hooks/useCurrency';
 
 const getDefaultDates = () => {
     const end = new Date();
@@ -21,6 +19,8 @@ const getDefaultDates = () => {
 
 const SORDashboard = () => {
     const { activeCountry } = useCountry();
+    const { format } = useCurrency();
+    const formatCurrency = (amount) => format(Number(amount || 0));
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const defaults = getDefaultDates();

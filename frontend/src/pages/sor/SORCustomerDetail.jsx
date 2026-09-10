@@ -10,11 +10,9 @@ import Spinner from '../../components/Spinner';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../utils/constants';
 import { useCountry } from '../../context/CountryContext';
+import useCurrency from '../../hooks/useCurrency';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-const fmt = (n) =>
-    `₦${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 const fmtDate = (d) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -65,6 +63,7 @@ const TabBar = ({ tabs, active, onChange }) => (
 
 // ─── LEDGER PANEL ────────────────────────────────────────────────────────────
 const LedgerPanel = ({ customerId }) => {
+    const { format: fmt } = useCurrency();
     const [entries, setEntries] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -189,7 +188,7 @@ const TemplatesPanel = ({ customerId, countryId }) => {
         if (!modalOpen) return;
         const countryParam = countryId ? `?countryId=${countryId}` : '';
         Promise.all([
-            api.get('/products?limit=500'),
+            api.get(`/products?limit=500${countryParam ? `&countryId=${countryId}` : ''}`),
             api.get(`/regions${countryParam}`),
             api.get(`/warehouses${countryParam}`),
         ]).then(([p, r, w]) => {
@@ -395,6 +394,7 @@ const emptyPayment = { amount: '', paymentDate: new Date().toISOString().split('
 const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
     const { user } = useAuth();
     const { activeCountry } = useCountry();
+    const { format: fmt, symbol } = useCurrency();
     const isAdmin = user?.role === ROLES.ADMIN;
 
     const [payments, setPayments] = useState([]);
@@ -590,7 +590,7 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
                         <div className="form-group" style={{ margin: 0 }}>
                             <label>
-                                Amount (₦) <span style={{ color: '#DC2626' }}>*</span>
+                                Amount ({symbol}) <span style={{ color: '#DC2626' }}>*</span>
                                 {form.items.length > 0 && computedAmount !== null && (
                                     <span style={{ marginLeft: '0.5rem', fontSize: '0.78rem', color: '#10B981', fontWeight: 600 }}>
                                         (auto: {fmt(computedAmount)})
@@ -822,6 +822,7 @@ const TABS = [
 ];
 
 const SORCustomerDetail = () => {
+    const { format: fmt } = useCurrency();
     const { id } = useParams();
     const navigate = useNavigate();
     const { activeCountry } = useCountry();

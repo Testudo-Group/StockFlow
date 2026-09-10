@@ -8,10 +8,12 @@ import PermissionGuard from '../components/PermissionGuard';
 import { PERMISSIONS } from '../utils/constants';
 import ExportButton from '../components/ExportButton';
 import { useCountry } from '../context/CountryContext';
+import useCurrency from '../hooks/useCurrency';
 
 const Orders = () => {
     const navigate = useNavigate();
     const { activeCountry } = useCountry();
+    const { format, formatShort, symbol } = useCurrency();
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filterStatus, setFilterStatus] = useState('');
@@ -168,7 +170,7 @@ const Orders = () => {
         { key: 'channel', label: 'Channel' },
         { key: 'warehouse', label: 'Warehouse' },
         { key: 'region', label: 'Region' },
-        { key: 'totalAmount', label: 'Total Amount (₦)' },
+        { key: 'totalAmount', label: `Total Amount (${symbol})` },
         { key: 'itemCount', label: 'Items Count' },
         { key: 'date', label: 'Date' }
     ];
@@ -288,8 +290,8 @@ const Orders = () => {
                                 <BarChart data={getMTDData()} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                                     <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#94A3B8' }} interval={4} />
-                                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={v => `₦${(v/1000).toFixed(0)}k`} width={48} />
-                                    <Tooltip formatter={v => [`₦${v.toLocaleString()}`, 'Revenue']} labelFormatter={l => `Day ${l}`} />
+                                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={v => `${symbol}${(v/1000).toFixed(0)}k`} width={48} />
+                                    <Tooltip formatter={v => [formatShort(v), 'Revenue']} labelFormatter={l => `Day ${l}`} />
                                     <Bar dataKey="revenue" radius={[3,3,0,0]} minPointSize={3}>
                                         {getMTDData().map((entry, i) => (
                                             <Cell key={i} fill={entry.revenue > 0 ? '#4880FF' : '#DBEAFE'} />
@@ -306,8 +308,8 @@ const Orders = () => {
                                 <BarChart data={getYTDData()} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94A3B8' }} />
-                                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={v => `₦${(v/1000).toFixed(0)}k`} width={48} />
-                                    <Tooltip formatter={v => [`₦${v.toLocaleString()}`, 'Revenue']} />
+                                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={v => `${symbol}${(v/1000).toFixed(0)}k`} width={48} />
+                                    <Tooltip formatter={v => [formatShort(v), 'Revenue']} />
                                     <Bar dataKey="revenue" radius={[3,3,0,0]} minPointSize={3}>
                                         {getYTDData().map((entry, i) => (
                                             <Cell key={i} fill={entry.revenue > 0 ? '#10B981' : '#D1FAE5'} />
@@ -359,7 +361,7 @@ const Orders = () => {
                                                 </span>
                                             </td>
                                             <td>{order.channel || 'N/A'}</td>
-                                            <td>₦{(order.totalAmount || 0).toLocaleString()}</td>
+                                            <td>{formatShort(order.totalAmount || 0)}</td>
                                             <td onClick={e => e.stopPropagation()}>
                                                 <button
                                                     onClick={(e) => togglePaymentStatus(order, e)}
@@ -551,7 +553,7 @@ const Orders = () => {
                                                                                     fontSize: '0.85rem',
                                                                                     color: '#64748B'
                                                                                 }}>
-                                                                                    ₦{(item.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                    {format(item.price || 0)}
                                                                                 </td>
                                                                                 <td style={{ 
                                                                                     padding: '12px', 
@@ -560,7 +562,7 @@ const Orders = () => {
                                                                                     color: '#10B981',
                                                                                     fontWeight: 600
                                                                                 }}>
-                                                                                    ₦{((item.quantity || 0) * (item.price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                    {format((item.quantity || 0) * (item.price || 0))}
                                                                                 </td>
                                                                             </tr>
                                                                         ))}
@@ -583,7 +585,7 @@ const Orders = () => {
                                                                                 fontWeight: 700,
                                                                                 color: '#4880FF'
                                                                             }}>
-                                                                                ₦{(order.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                {format(order.totalAmount || 0)}
                                                                             </td>
                                                                         </tr>
                                                                     </tfoot>
@@ -609,7 +611,7 @@ const Orders = () => {
                                         Total ({orders.length} order{orders.length !== 1 ? 's' : ''})
                                     </td>
                                     <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, fontSize: '0.95rem', color: '#4880FF' }}>
-                                        ₦{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {format(totalAmount)}
                                     </td>
                                     <td></td>
                                 </tr>

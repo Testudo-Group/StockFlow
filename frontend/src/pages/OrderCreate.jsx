@@ -5,6 +5,7 @@ import { FiPlus, FiTrash2, FiPackage, FiBox } from 'react-icons/fi';
 import api from '../utils/api';
 import Spinner from '../components/Spinner';
 import { useCountry } from '../context/CountryContext';
+import useCurrency from '../hooks/useCurrency';
 
 const ProductSearchSelect = ({ value, options, onChange, placeholder }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -233,6 +234,7 @@ const BundleSearchSelect = ({ value, options, onChange, placeholder }) => {
 const OrderCreate = () => {
     const navigate = useNavigate();
     const { activeCountry } = useCountry();
+    const { formatShort, symbol } = useCurrency();
     const [loading, setLoading] = useState(false);
     const [regions, setRegions] = useState([]);
     const [warehouses, setWarehouses] = useState([]);
@@ -289,9 +291,9 @@ const OrderCreate = () => {
         try {
             const countryParam = activeCountry?._id ? `&countryId=${activeCountry._id}` : '';
             const [prodRes, invRes, bundleRes] = await Promise.all([
-                api.get('/products?limit=1000'),
+                api.get(`/products?limit=1000&countryId=${activeCountry._id}`),
                 api.get(`/inventory/balance?warehouseId=${warehouseId}${countryParam}`),
-                api.get('/bundles?status=ACTIVE')
+                api.get(`/bundles?status=ACTIVE&countryId=${activeCountry._id}`)
             ]);
             setProducts(prodRes.data.data.filter(p => p.status === 'ACTIVE'));
             setBundles(bundleRes.data.data);
@@ -1027,7 +1029,7 @@ const OrderCreate = () => {
                                                         }}
                                                     />
                                                     <span style={{ fontSize: '11px', color: '#78350F' }}>
-                                                        ₦ off total order
+                                                        {symbol} off total order
                                                     </span>
                                                 </>
                                             )}
@@ -1066,7 +1068,7 @@ const OrderCreate = () => {
                                     }}
                                 />
                                 <span style={{ fontSize: '12px', color: '#0369A1' }}>
-                                    ₦ (optional)
+                                    {symbol} (optional)
                                 </span>
                             </div>
 
@@ -1147,14 +1149,14 @@ const OrderCreate = () => {
                                                         </label>
                                                         <input
                                                             type="text"
-                                                            value={selectedBundle ? `₦${(
+                                                            value={selectedBundle ? formatShort(
                                                                 item.bundleQty * (selectedBundle.retailPrice != null
                                                                     ? selectedBundle.retailPrice
                                                                     : selectedBundle.products.reduce((sum, bp) => {
                                                                         const price = bp.product?.price || 0;
                                                                         return sum + (bp.quantity * price);
                                                                     }, 0))
-                                                            ).toLocaleString()}` : '₦0'}
+                                                            ) : formatShort(0)}
                                                             readOnly
                                                             disabled
                                                             style={{ background: '#f5f5f5', cursor: 'not-allowed' }}
@@ -1231,7 +1233,7 @@ const OrderCreate = () => {
                                                         <div className="form-group order-item-price-field" style={{ width: '100px', minWidth: '80px' }}>
                                                             <label>
                                                                 Discount/Pc
-                                                                <span style={{ fontSize: '10px', color: '#F59E0B', marginLeft: '4px', fontWeight: 600 }}>₦</span>
+                                                                <span style={{ fontSize: '10px', color: '#F59E0B', marginLeft: '4px', fontWeight: 600 }}>{symbol}</span>
                                                             </label>
                                                             <input
                                                                 type="number"
@@ -1266,7 +1268,7 @@ const OrderCreate = () => {
                                 {applyDiscount && discountType === 'global' && globalDiscount > 0 ? (
                                     <>
                                         <div style={{ fontSize: '0.95rem', color: '#64748B', marginBottom: '4px' }}>
-                                            Subtotal: ₦{formData.items.reduce((acc, item) => {
+                                            Subtotal: {symbol}{formData.items.reduce((acc, item) => {
                                                 if (item.type === 'BUNDLE') {
                                                     const bundle = bundles.find(b => b._id === item.bundle);
                                                     if (!bundle) return acc;
@@ -1290,26 +1292,26 @@ const OrderCreate = () => {
                                             }, 0).toLocaleString()}
                                         </div>
                                         <div style={{ fontSize: '0.95rem', color: '#F59E0B', marginBottom: '8px' }}>
-                                            Discount: -₦{globalDiscount.toLocaleString()}
+                                            Discount: -{formatShort(globalDiscount)}
                                         </div>
                                         {deliveryFee > 0 && (
                                             <div style={{ fontSize: '0.95rem', color: '#64748B', marginBottom: '8px' }}>
-                                                Delivery Fee: +₦{deliveryFee.toLocaleString()}
+                                                Delivery Fee: +{formatShort(deliveryFee)}
                                             </div>
                                         )}
                                         <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10B981' }}>
-                                            Total: ₦{calculateTotal().toLocaleString()}
+                                            Total: {formatShort(calculateTotal())}
                                         </div>
                                     </>
                                 ) : (
                                     <>
                                         {deliveryFee > 0 && (
                                             <div style={{ fontSize: '0.95rem', color: '#64748B', marginBottom: '8px' }}>
-                                                Delivery Fee: +₦{deliveryFee.toLocaleString()}
+                                                Delivery Fee: +{formatShort(deliveryFee)}
                                             </div>
                                         )}
                                         <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
-                                            Total: ₦{calculateTotal().toLocaleString()}
+                                            Total: {formatShort(calculateTotal())}
                                         </div>
                                     </>
                                 )}

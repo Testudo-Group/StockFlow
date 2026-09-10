@@ -40,9 +40,11 @@ const productSchema = new mongoose.Schema(
             type: Number, // Calculated (L * B * H)
             default: 0
         },
+        // Legacy single-currency price. Superseded by countryPrices — retained
+        // so historical documents keep their original value, but never read
+        // for display or order pricing.
         price: {
             type: Number,
-            required: [true, 'Price is required'],
             min: [0, 'Price cannot be negative'],
             default: 0
         },
@@ -52,12 +54,36 @@ const productSchema = new mongoose.Schema(
             default: 0,
             // Weight per piece in kg
         },
+        // Legacy single-currency cost. Superseded by countryPrices.
         wholesaleCost: {
             type: Number,
             min: [0, 'Wholesale cost cannot be negative'],
             default: 0,
             // Cost per piece
         },
+        // Per-country pricing. Each country holds its own retail price and
+        // wholesale cost in that country's own currency — values are never
+        // converted between countries. A country with no entry here is
+        // unpriced: the product cannot be ordered there.
+        countryPrices: [
+            {
+                countryId: {
+                    type: mongoose.Schema.ObjectId,
+                    ref: 'Country',
+                    required: true,
+                },
+                price: {
+                    type: Number,
+                    required: [true, 'Price is required'],
+                    min: [0, 'Price cannot be negative'],
+                },
+                wholesaleCost: {
+                    type: Number,
+                    min: [0, 'Wholesale cost cannot be negative'],
+                    default: 0,
+                },
+            },
+        ],
         status: {
             type: String,
             enum: ['ACTIVE', 'INACTIVE', 'DISCONTINUED'],
@@ -72,5 +98,6 @@ const productSchema = new mongoose.Schema(
 // Compound index if we frequently search by brand and status
 productSchema.index({ brand: 1, status: 1 });
 productSchema.index({ category: 1 });
+productSchema.index({ 'countryPrices.countryId': 1 });
 
 module.exports = mongoose.model('Product', productSchema);

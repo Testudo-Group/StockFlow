@@ -10,6 +10,7 @@
 require('dotenv').config({ path: `${__dirname}/.env` });
 const mongoose = require('mongoose');
 const dns = require('dns');
+const { getDefaultCurrency } = require('./src/config/currencies');
 
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
@@ -31,7 +32,13 @@ async function run() {
     await countriesCol.findOneAndUpdate(
         { isoCode: 'NG' },
         {
-            $set: { name: 'Nigeria', isoCode: 'NG', isActive: true, isDefault: true },
+            $set: {
+                name: 'Nigeria',
+                isoCode: 'NG',
+                isActive: true,
+                isDefault: true,
+                ...getDefaultCurrency('NG'),
+            },
             $setOnInsert: { createdAt: new Date(), updatedAt: new Date() },
         },
         { upsert: true, returnDocument: 'after' }

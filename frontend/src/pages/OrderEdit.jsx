@@ -5,6 +5,7 @@ import { FiPlus, FiTrash2, FiPackage, FiBox } from 'react-icons/fi';
 import api from '../utils/api';
 import Spinner from '../components/Spinner';
 import { useCountry } from '../context/CountryContext';
+import useCurrency from '../hooks/useCurrency';
 
 // ---------------------------------------------------------------------------
 // ProductSearchSelect — identical to OrderCreate
@@ -160,6 +161,7 @@ const OrderEdit = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { activeCountry } = useCountry();
+    const { formatShort, symbol } = useCurrency();
 
     const [pageLoading, setPageLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -211,9 +213,9 @@ const OrderEdit = () => {
         try {
             const countryParam = activeCountry?._id ? `&countryId=${activeCountry._id}` : '';
             const [prodRes, invRes, bundleRes] = await Promise.all([
-                api.get('/products?limit=1000'),
+                api.get(`/products?limit=1000&countryId=${activeCountry._id}`),
                 api.get(`/inventory/balance?warehouseId=${warehouseId}${countryParam}`),
-                api.get('/bundles?status=ACTIVE'),
+                api.get(`/bundles?status=ACTIVE&countryId=${activeCountry._id}`),
             ]);
             setProducts(prodRes.data.data.filter(p => p.status === 'ACTIVE'));
             setBundles(bundleRes.data.data);
@@ -592,7 +594,7 @@ const OrderEdit = () => {
                                                     <label style={{ fontSize: '12px', color: '#92400E', fontWeight: 500 }}>Total Discount:</label>
                                                     <input type="number" min="0" value={globalDiscount || ''} onChange={e => setGlobalDiscount(parseFloat(e.target.value) || 0)}
                                                         placeholder="0" style={{ width: '120px', padding: '4px 8px', borderRadius: '5px', border: '1px solid #FCD34D', fontSize: '13px' }} />
-                                                    <span style={{ fontSize: '11px', color: '#78350F' }}>₦ off total order</span>
+                                                    <span style={{ fontSize: '11px', color: '#78350F' }}>{symbol} off total order</span>
                                                 </>
                                             )}
                                         </>
@@ -605,7 +607,7 @@ const OrderEdit = () => {
                                 <label style={{ fontSize: '13px', color: '#0C4A6E', fontWeight: 600 }}>Delivery Fee:</label>
                                 <input type="number" min="0" value={deliveryFee || ''} onChange={e => setDeliveryFee(parseFloat(e.target.value) || 0)}
                                     placeholder="0" style={{ width: '140px', padding: '6px 12px', borderRadius: '5px', border: '1px solid #BAE6FD', fontSize: '13px' }} />
-                                <span style={{ fontSize: '12px', color: '#0369A1' }}>₦ (optional)</span>
+                                <span style={{ fontSize: '12px', color: '#0369A1' }}>{symbol} (optional)</span>
                             </div>
 
                             {/* Item Rows */}
@@ -654,7 +656,7 @@ const OrderEdit = () => {
                                                     </div>
                                                     <div className="form-group" style={{ width: '120px' }}>
                                                         <label>Line Total</label>
-                                                        <input type="text" value={`₦${lineTotal.toLocaleString()}`} readOnly disabled style={{ background: '#f5f5f5' }} />
+                                                        <input type="text" value={formatShort(lineTotal)} readOnly disabled style={{ background: '#f5f5f5' }} />
                                                     </div>
                                                 </>
                                             ) : (
@@ -674,7 +676,7 @@ const OrderEdit = () => {
                                                         <input type="number" min="0" value={item.pieceQty || ''} onChange={e => updateItem(idx, 'pieceQty', parseInt(e.target.value) || 0)} />
                                                     </div>
                                                     <div className="form-group" style={{ width: '110px' }}>
-                                                        <label>Price/pc (₦)</label>
+                                                        <label>Price/pc ({symbol})</label>
                                                         <input type="number" min="0" step="0.01" value={item.price || ''} onChange={e => updateItem(idx, 'price', parseFloat(e.target.value) || 0)} />
                                                     </div>
                                                     {applyDiscount && discountType === 'individual' && (
@@ -685,7 +687,7 @@ const OrderEdit = () => {
                                                     )}
                                                     <div className="form-group" style={{ width: '120px' }}>
                                                         <label>Line Total</label>
-                                                        <input type="text" value={`₦${lineTotal.toLocaleString()}`} readOnly disabled style={{ background: '#f5f5f5' }} />
+                                                        <input type="text" value={formatShort(lineTotal)} readOnly disabled style={{ background: '#f5f5f5' }} />
                                                     </div>
                                                 </>
                                             )}
@@ -710,7 +712,7 @@ const OrderEdit = () => {
                         <div style={{ minWidth: '260px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: '#4A5568' }}>
                                 <span>Estimated Total</span>
-                                <span style={{ fontWeight: 700, fontSize: '16px', color: '#2D3748' }}>₦{calculateTotal().toLocaleString()}</span>
+                                <span style={{ fontWeight: 700, fontSize: '16px', color: '#2D3748' }}>{formatShort(calculateTotal())}</span>
                             </div>
                         </div>
                     </div>

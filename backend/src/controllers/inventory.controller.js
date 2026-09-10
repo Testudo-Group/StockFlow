@@ -5,6 +5,11 @@ const InventoryBalance = require('../models/InventoryBalance');
 const InventoryTransfer = require('../models/InventoryTransfer');
 const Product = require('../models/Product');
 const Warehouse = require('../models/Warehouse');
+const {
+    countryPricingStage,
+    resolveProductPrice,
+    withResolvedPrice,
+} = require('../utils/pricing');
 
 // @desc    Adjust stock (IN, OUT, ADJUSTMENT, TRANSFER)
 // @route   POST /api/inventory/adjust
@@ -148,7 +153,8 @@ exports.getBalance = async (req, res, next) => {
                         as: 'product'
                     }
                 },
-                { $unwind: '$product' }
+                { $unwind: '$product' },
+                countryPricingStage('$product', req.countryId),
             ];
 
             // Add category filter if provided
@@ -180,8 +186,8 @@ exports.getBalance = async (req, res, next) => {
                             name: '$product.name',
                             sku: '$product.sku',
                             cartonSize: '$product.cartonSize',
-                            wholesaleCost: '$product.wholesaleCost',
-                            price: '$product.price',
+                            wholesaleCost: '$countryWholesaleCost',
+                            price: '$countryPrice',
                             volume: '$product.volume',
                             dimensions: '$product.dimensions',
                             category: '$product.category',
@@ -222,7 +228,8 @@ exports.getBalance = async (req, res, next) => {
                         as: 'productInfo'
                     }
                 },
-                { $unwind: '$productInfo' }
+                { $unwind: '$productInfo' },
+                countryPricingStage('$productInfo', req.countryId),
             ];
 
             // Add category match if provided
@@ -263,8 +270,8 @@ exports.getBalance = async (req, res, next) => {
                             name: '$productInfo.name',
                             sku: '$productInfo.sku',
                             cartonSize: '$productInfo.cartonSize',
-                            wholesaleCost: '$productInfo.wholesaleCost',
-                            price: '$productInfo.price',
+                            wholesaleCost: '$countryWholesaleCost',
+                            price: '$countryPrice',
                             volume: '$productInfo.volume',
                             dimensions: '$productInfo.dimensions',
                             category: '$productInfo.category',
@@ -280,9 +287,18 @@ exports.getBalance = async (req, res, next) => {
 
             balances = await InventoryBalance.aggregate(pipeline);
         } else {
-            balances = await InventoryBalance.find(query)
-                .populate('product', 'name sku cartonSize wholesaleCost price volume dimensions category brand')
+            const rawBalances = await InventoryBalance.find(query)
+                .populate('product', 'name sku cartonSize wholesaleCost price countryPrices volume dimensions category brand')
                 .populate('warehouse', 'name');
+
+            // Surface the active country's price on each product
+            balances = rawBalances.map((balance) => {
+                const obj = balance.toObject();
+                if (obj.product) {
+                    obj.product = withResolvedPrice(obj.product, req.countryId);
+                }
+                return obj;
+            });
         }
 
         res.status(200).json({
@@ -325,7 +341,7 @@ exports.getLedger = async (req, res, next) => {
         const total = await StockLedger.countDocuments(query);
 
         const ledger = await StockLedger.find(query)
-            .populate('product', 'name sku wholesaleCost price')
+            .populate('product', 'name sku wholesaleCost price countryPrices')
             .populate('warehouse', 'name')
             .populate('performedBy', 'email name')
             .sort({ createdAt: -1 })
@@ -335,8 +351,11 @@ exports.getLedger = async (req, res, next) => {
         // Compute total inventory value after the change using product cost
         const enriched = ledger.map(entry => {
             const obj = entry.toObject({ virtuals: false });
-            const wc = obj.product?.wholesaleCost;
-            const rp = obj.product?.price;
+            // Value the movement using this country's own price — never
+            // another country's, since amounts are not convertible.
+            const countryPrice = resolveProductPrice(obj.product, req.countryId);
+            const wc = countryPrice?.wholesaleCost;
+            const rp = countryPrice?.price;
             const costPerUnit = (wc != null && wc > 0) ? wc : (rp != null && rp > 0 ? rp : 0);
             const balAfter = obj.balanceAfter ?? 0;
             obj.valueAfter = balAfter * costPerUnit;

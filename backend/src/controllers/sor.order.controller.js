@@ -1,6 +1,9 @@
 const Order = require('../models/Order');
 const SOROrder = require('../models/SOROrder');
 const SORCustomer = require('../models/SORCustomer');
+const Product = require('../models/Product');
+const Country = require('../models/Country');
+const { findUnpricedItems } = require('../utils/pricing');
 
 // @desc    Create SOR order (creates a standard Order + SOROrder link)
 // @route   POST /api/sor/orders
@@ -42,6 +45,23 @@ exports.createSOROrder = async (req, res, next) => {
             return res.status(404).json({ success: false, message: 'SOR customer not found' });
         }
 
+        // Prices are set per country — reject products with no price here
+        const unpriced = await findUnpricedItems(items, req.countryId, Product);
+        if (unpriced.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `These products have no price set for this country: ${unpriced
+                    .map((p) => p.name)
+                    .join(', ')}`,
+                unpricedProducts: unpriced,
+            });
+        }
+
+        // Snapshot the currency so receipts reprint correctly later
+        const country = await Country.findById(req.countryId).select(
+            'currencyCode currencySymbol locale'
+        );
+
         // Req 3.4 — Create the standard Order document (reusing existing order logic)
         const totalAmount =
             items.reduce((acc, item) => acc + (item.price || 0) * item.quantity, 0) +
@@ -68,6 +88,13 @@ exports.createSOROrder = async (req, res, next) => {
             status: 'PENDING',
             logs: [{ status: 'PENDING', changedBy: req.user.id }],
             countryId: req.countryId,
+            currency: country
+                ? {
+                      code: country.currencyCode,
+                      symbol: country.currencySymbol,
+                      locale: country.locale,
+                  }
+                : undefined,
         });
 
         // Req 3.4 / 3.5 — Create the SOROrder link document

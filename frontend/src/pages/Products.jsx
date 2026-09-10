@@ -6,8 +6,13 @@ import Spinner from '../components/Spinner';
 import PermissionGuard from '../components/PermissionGuard';
 import { PERMISSIONS } from '../utils/constants';
 import ExportButton from '../components/ExportButton';
+import useCurrency from '../hooks/useCurrency';
+import { useCountry } from '../context/CountryContext';
+import { currencyOf } from '../utils/currency';
 
 const Products = () => {
+    const { symbol, format } = useCurrency();
+    const { activeCountry, availableCountries } = useCountry();
     const [products, setProducts] = useState([]);
     const [brands, setBrands] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -29,8 +34,9 @@ const Products = () => {
         status: 'ACTIVE',
         weight: 0,
         cartonWeight: 0,
-        wholesaleCost: 0,
-        price: 0,
+        // Prices are held per country and never converted between them —
+        // { [countryId]: { price, wholesaleCost } }, blank meaning unpriced.
+        countryPrices: {},
         dimensions: { length: 0, breadth: 0, height: 0 }
     };
     const [formData, setFormData] = useState(initialForm);
@@ -40,8 +46,9 @@ const Products = () => {
     }, [filterBrand, filterCategory]);
 
     useEffect(() => {
+        if (!activeCountry?._id) return;
         fetchData();
-    }, [filterBrand, filterCategory, page]);
+    }, [filterBrand, filterCategory, page, activeCountry?._id]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -49,7 +56,12 @@ const Products = () => {
             const brandQuery = filterBrand ? `&brandId=${filterBrand}` : '';
             const categoryQuery = filterCategory ? `&categoryId=${filterCategory}` : '';
             const [productsRes, brandsRes, categoriesRes] = await Promise.all([
-                api.get(`/products?page=${page}&limit=20${brandQuery}${categoryQuery}`),
+                // includeUnpriced keeps products with no price in this country
+                // visible here, so an admin can give them one.
+                api.get(
+                    `/products?page=${page}&limit=20${brandQuery}${categoryQuery}` +
+                    `&countryId=${activeCountry._id}&includeUnpriced=true`
+                ),
                 api.get('/brands'),
                 api.get('/categories')
             ]);
@@ -67,9 +79,20 @@ const Products = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            // Only countries given a price are sent; the rest stay unpriced
+            // and the product cannot be ordered there.
+            const countryPrices = Object.entries(formData.countryPrices || {})
+                .filter(([, v]) => v && v.price !== '' && v.price !== null && v.price !== undefined)
+                .map(([countryId, v]) => ({
+                    countryId,
+                    price: Number(v.price) || 0,
+                    wholesaleCost: Number(v.wholesaleCost) || 0,
+                }));
+
             // Convert dimensions from cm to m for backend
             const payload = {
                 ...formData,
+                countryPrices,
                 dimensions: {
                     length: (formData.dimensions?.length || 0) / 100,
                     breadth: (formData.dimensions?.breadth || 0) / 100,
@@ -104,8 +127,14 @@ const Products = () => {
                 status: product.status,
                 weight: product.weight || 0,
                 cartonWeight: (product.weight || 0) * (product.cartonSize || 1),
-                wholesaleCost: product.wholesaleCost || 0,
-                price: product.price || 0,
+                countryPrices: (product.countryPrices || []).reduce((acc, cp) => {
+                    const id = cp.countryId?._id || cp.countryId;
+                    acc[id] = {
+                        price: cp.price ?? '',
+                        wholesaleCost: cp.wholesaleCost ?? '',
+                    };
+                    return acc;
+                }, {}),
                 dimensions: product.dimensions ? {
                     length: (product.dimensions.length || 0) * 100,
                     breadth: (product.dimensions.breadth || 0) * 100,
@@ -146,8 +175,8 @@ const Products = () => {
             category: product.category?.name || '',
             cartonSize: product.cartonSize || 0,
             weight: product.weight || 0,
-            wholesaleCost: parseFloat((product.wholesaleCost || 0).toFixed(2)),
-            price: parseFloat((product.price || 0).toFixed(2)),
+            wholesaleCost: product.wholesaleCost == null ? '' : parseFloat(product.wholesaleCost.toFixed(2)),
+            price: product.price == null ? '' : parseFloat(product.price.toFixed(2)),
             length: product.dimensions?.length || 0,
             breadth: product.dimensions?.breadth || 0,
             height: product.dimensions?.height || 0,
@@ -162,8 +191,8 @@ const Products = () => {
         { key: 'category', label: 'Category' },
         { key: 'cartonSize', label: 'Carton Size' },
         { key: 'weight', label: 'Weight (kg)' },
-        { key: 'wholesaleCost', label: 'Wholesale Cost (₦)' },
-        { key: 'price', label: 'Price (₦)' },
+        { key: 'wholesaleCost', label: `Wholesale Cost (${symbol})` },
+        { key: 'price', label: `Price (${symbol})` },
         { key: 'length', label: 'Length (m)' },
         { key: 'breadth', label: 'Breadth (m)' },
         { key: 'height', label: 'Height (m)' },
@@ -247,8 +276,28 @@ const Products = () => {
                                         </span>
                                     </td>
                                     <td>
-                                        <div style={{ fontSize: '0.8rem', color: '#6B7A99' }}>Cost: ₦{product.wholesaleCost?.toFixed(2) || '0.00'}</div>
-                                        <div style={{ fontWeight: 600, color: '#111827' }}>Price: ₦{product.price?.toFixed(2) || '0.00'}</div>
+                                        {product.isPriced ? (
+                                            <>
+                                                <div style={{ fontSize: '0.8rem', color: '#6B7A99' }}>Cost: {format(product.wholesaleCost)}</div>
+                                                <div style={{ fontWeight: 600, color: '#111827' }}>Price: {format(product.price)}</div>
+                                            </>
+                                        ) : (
+                                            <span
+                                                style={{
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    color: '#B45309',
+                                                    background: '#FEF3C7',
+                                                    border: '1px solid #FDE68A',
+                                                    borderRadius: '6px',
+                                                    padding: '2px 8px',
+                                                    whiteSpace: 'nowrap',
+                                                }}
+                                                title={`Set a price for ${activeCountry?.name} to sell this product there`}
+                                            >
+                                                Not priced in {activeCountry?.name}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="text-secondary">
                                         {product.dimensions ? (
@@ -377,28 +426,79 @@ const Products = () => {
 
 
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                                <div className="form-group">
-                                    <label>Wholesale Cost (piece)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={formData.wholesaleCost || ''}
-                                        onChange={(e) => setFormData({ ...formData, wholesaleCost: parseFloat(e.target.value) || 0 })}
-                                        onWheel={(e) => e.target.blur()}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Retail Price (piece)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={formData.price || ''}
-                                        onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                                        onWheel={(e) => e.target.blur()}
-                                    />
+                            <div className="form-group">
+                                <label style={{ marginBottom: '4px' }}>Pricing by country (per piece)</label>
+                                <p style={{ fontSize: '0.78rem', color: '#6B7A99', margin: '0 0 10px' }}>
+                                    Each country is priced in its own currency — no conversion is applied.
+                                    Leave a country blank to leave the product unavailable to order there.
+                                </p>
+
+                                <div style={{ border: '1px solid #E2E8F0', borderRadius: '8px', overflow: 'hidden' }}>
+                                    {availableCountries.map((country, index) => {
+                                        const entry = formData.countryPrices?.[country._id] || {};
+                                        const countrySymbol = currencyOf(country).symbol;
+
+                                        const setField = (field, value) =>
+                                            setFormData({
+                                                ...formData,
+                                                countryPrices: {
+                                                    ...formData.countryPrices,
+                                                    [country._id]: { ...entry, [field]: value },
+                                                },
+                                            });
+
+                                        return (
+                                            <div
+                                                key={country._id}
+                                                style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: '1.1fr 1fr 1fr',
+                                                    gap: '10px',
+                                                    alignItems: 'center',
+                                                    padding: '10px 12px',
+                                                    background: index % 2 ? '#F8FAFC' : '#fff',
+                                                    borderTop: index ? '1px solid #EEF2F7' : 'none',
+                                                }}
+                                            >
+                                                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1E293B' }}>
+                                                    {country.name}
+                                                    <span style={{ marginLeft: '6px', fontWeight: 500, color: '#64748B' }}>
+                                                        ({country.currencyCode})
+                                                    </span>
+                                                </div>
+
+                                                <label style={{ display: 'block', margin: 0 }}>
+                                                    <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                                                        Wholesale cost ({countrySymbol})
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        placeholder="0.00"
+                                                        value={entry.wholesaleCost ?? ''}
+                                                        onChange={(e) => setField('wholesaleCost', e.target.value)}
+                                                        onWheel={(e) => e.target.blur()}
+                                                    />
+                                                </label>
+
+                                                <label style={{ display: 'block', margin: 0 }}>
+                                                    <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                                                        Retail price ({countrySymbol})
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        placeholder="Not priced"
+                                                        value={entry.price ?? ''}
+                                                        onChange={(e) => setField('price', e.target.value)}
+                                                        onWheel={(e) => e.target.blur()}
+                                                    />
+                                                </label>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 

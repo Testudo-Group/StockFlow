@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Country = require('../models/Country');
 const User = require('../models/User');
+const { getDefaultCurrency } = require('../config/currencies');
 
 // @desc    Get accessible countries for the current user
 // @route   GET /api/countries
@@ -45,12 +46,36 @@ exports.getCountries = async (req, res, next) => {
 // @access  Private (Admin only)
 exports.createCountry = async (req, res, next) => {
     try {
-        const { name, isoCode } = req.body;
+        const { name, isoCode, currencyCode, currencySymbol, currencyName, locale } = req.body;
 
         if (!name || !isoCode) {
             return res.status(400).json({
                 success: false,
                 message: 'name and isoCode are required',
+            });
+        }
+
+        // Currency defaults come from the ISO table; any field the caller
+        // supplies overrides the default.
+        const defaults = getDefaultCurrency(isoCode);
+        const currency = {
+            currencyCode: (currencyCode || defaults.currencyCode).trim().toUpperCase(),
+            currencySymbol: (currencySymbol || defaults.currencySymbol).trim(),
+            currencyName: (currencyName || defaults.currencyName || '').trim(),
+            locale: (locale || defaults.locale).trim(),
+        };
+
+        if (currency.currencyCode.length !== 3) {
+            return res.status(400).json({
+                success: false,
+                message: 'currencyCode must be a 3-letter ISO 4217 code',
+            });
+        }
+
+        if (!currency.currencySymbol) {
+            return res.status(400).json({
+                success: false,
+                message: 'currencySymbol cannot be empty',
             });
         }
 
@@ -72,6 +97,7 @@ exports.createCountry = async (req, res, next) => {
         const country = await Country.create({
             name: name.trim(),
             isoCode: isoCode.trim().toUpperCase(),
+            ...currency,
             isActive: true,
             isDefault: false,
         });
@@ -112,6 +138,30 @@ exports.updateCountry = async (req, res, next) => {
             delete req.body.isDefault;
         }
 
+        // Currency fields may be edited, but never blanked out — every country
+        // must always carry a usable code and symbol.
+        if (req.body.currencyCode !== undefined) {
+            const code = String(req.body.currencyCode).trim().toUpperCase();
+            if (code.length !== 3) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'currencyCode must be a 3-letter ISO 4217 code',
+                });
+            }
+            req.body.currencyCode = code;
+        }
+
+        if (req.body.currencySymbol !== undefined) {
+            const symbol = String(req.body.currencySymbol).trim();
+            if (!symbol) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'currencySymbol cannot be empty',
+                });
+            }
+            req.body.currencySymbol = symbol;
+        }
+
         const updated = await Country.findByIdAndUpdate(
             req.params.id,
             req.body,
@@ -134,7 +184,7 @@ exports.getUserAssignments = async (req, res, next) => {
     try {
         const user = await User.findById(req.params.userId).populate(
             'countryAssignments',
-            'name isoCode isActive'
+            'name isoCode isActive currencyCode currencySymbol locale'
         );
 
         if (!user) {
@@ -191,7 +241,7 @@ exports.setUserAssignments = async (req, res, next) => {
             req.params.userId,
             { countryAssignments: countryIds },
             { new: true }
-        ).populate('countryAssignments', 'name isoCode isActive');
+        ).populate('countryAssignments', 'name isoCode isActive currencyCode currencySymbol locale');
 
         if (!user) {
             return res.status(404).json({

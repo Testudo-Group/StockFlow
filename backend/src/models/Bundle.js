@@ -24,12 +24,31 @@ const bundleSchema = new mongoose.Schema({
             default: 1
         }
     }],
+    // Legacy single-currency retail price. Superseded by countryPrices.
     retailPrice: {
         type: Number,
         min: [0, 'Retail price cannot be negative'],
         default: null
     },
+    // Per-country retail price, in each country's own currency. A country with
+    // no entry here is unpriced and the bundle cannot be ordered there.
+    countryPrices: [{
+        countryId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Country',
+            required: true
+        },
+        retailPrice: {
+            type: Number,
+            required: [true, 'Retail price is required'],
+            min: [0, 'Retail price cannot be negative']
+        }
+    }],
     priceHistory: [{
+        countryId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Country'
+        },
         previousPrice: { type: Number, default: null },
         newPrice: { type: Number, default: null },
         reason: { type: String, trim: true },
@@ -60,5 +79,6 @@ const bundleSchema = new mongoose.Schema({
 // Index for faster queries
 bundleSchema.index({ name: 1 });
 bundleSchema.index({ status: 1 });
+bundleSchema.index({ 'countryPrices.countryId': 1 });
 
 module.exports = mongoose.model('Bundle', bundleSchema);

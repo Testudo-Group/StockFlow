@@ -6,6 +6,7 @@ const {
     createProduct,
     updateProduct,
     deleteProduct,
+    setProductCountryPrice,
 } = require('../controllers/product.controller');
 const { protect } = require('../middleware/auth');
 const { checkPermission } = require('../middleware/checkPermission');
@@ -30,6 +31,12 @@ router
         ],
         createProduct
     );
+
+// Per-country price upsert — narrower than a full product update so price
+// edits for one country never overwrite another country's price.
+router
+    .route('/:id/price')
+    .patch(checkPermission(PERMISSIONS.MANAGE_INVENTORY), setProductCountryPrice);
 
 router
     .route('/:id')

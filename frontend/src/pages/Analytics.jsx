@@ -7,12 +7,14 @@ import { FiAlertTriangle, FiPackage, FiShoppingCart, FiTrendingUp, FiBox, FiFilt
 import Spinner from '../components/Spinner';
 import { ROLES } from '../utils/constants';
 import ExportButton from '../components/ExportButton';
+import useCurrency from '../hooks/useCurrency';
 
 const COLORS = ['#4880FF', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const Analytics = () => {
     const { user } = useAuth();
     const { activeCountry } = useCountry();
+    const { format, formatShort, symbol } = useCurrency();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
@@ -140,7 +142,7 @@ const Analytics = () => {
         { title: 'Total Orders', value: summary.totalOrders.toLocaleString(), icon: <FiShoppingCart />, color: '#4880FF', subtitle: 'All time orders' },
         { title: 'Active Products', value: summary.totalProducts.toLocaleString(), icon: <FiPackage />, color: '#10b981', subtitle: 'SKUs in catalog' },
         { title: 'Low Stock Alerts', value: summary.lowStock, icon: <FiAlertTriangle />, color: summary.lowStock > 0 ? '#ef4444' : '#10b981', subtitle: 'Items below threshold', alert: summary.lowStock > 0 },
-        ...(user?.role === ROLES.ADMIN ? [{ title: 'Inventory Value', value: `₦${(summary.totalValue || 0).toLocaleString()}`, icon: <FiTrendingUp />, color: '#8b5cf6', subtitle: 'Total stock value' }] : [])
+        ...(user?.role === ROLES.ADMIN ? [{ title: 'Inventory Value', value: formatShort(summary.totalValue || 0), icon: <FiTrendingUp />, color: '#8b5cf6', subtitle: 'Total stock value' }] : [])
     ];
 
     return (
@@ -286,7 +288,7 @@ const Analytics = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                             <div><div style={{ fontSize: '0.8rem', color: '#64748B', marginBottom: '0.25rem' }}>Total Units in Stock</div><div style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1E293B' }}>{summary.totalQuantity?.toLocaleString() || 0}</div></div>
                             {user?.role === ROLES.ADMIN && (
-                                <div><div style={{ fontSize: '0.8rem', color: '#64748B', marginBottom: '0.25rem' }}>Total Inventory Value</div><div style={{ fontSize: '1.5rem', fontWeight: 600, color: '#10b981' }}>₦{(summary.totalValue || 0).toLocaleString()}</div></div>
+                                <div><div style={{ fontSize: '0.8rem', color: '#64748B', marginBottom: '0.25rem' }}>Total Inventory Value</div><div style={{ fontSize: '1.5rem', fontWeight: 600, color: '#10b981' }}>{formatShort(summary.totalValue || 0)}</div></div>
                             )}
                             <div><div style={{ fontSize: '0.8rem', color: '#64748B', marginBottom: '0.25rem' }}>Top Selling Brand</div><div style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1E293B' }}>{summary.topSellingBrand}</div></div>
                         </div>
@@ -630,7 +632,7 @@ const Analytics = () => {
             {activeTab === 'warehouse' && (() => {
                 const WH_COLORS = { Olowora: '#4880FF', Lekki: '#10B981', Wuse: '#F59E0B' };
                 const metrics = [
-                    { key: 'totalSales',  label: 'Total Sales Volume',    fmt: v => `₦${(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}` },
+                    { key: 'totalSales',  label: 'Total Sales Volume',    fmt: v => format(v||0) },
                     { key: 'totalOrders', label: 'Total Orders',           fmt: v => (v||0).toLocaleString() },
                     { key: 'totalUnits',  label: 'Total Units Dispatched', fmt: v => (v||0).toLocaleString() },
                 ];
@@ -683,7 +685,7 @@ const Analytics = () => {
                                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                                     <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#64748B' }} />
                                     <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }}
-                                        tickFormatter={v => whMetric === 'totalSales' ? `₦${(v/1000).toFixed(0)}k` : v.toLocaleString()}
+                                        tickFormatter={v => whMetric === 'totalSales' ? `${symbol}${(v/1000).toFixed(0)}k` : v.toLocaleString()}
                                         width={60} />
                                     <Tooltip formatter={(v, name) => [tooltipFmt(v), name]} />
                                     <Legend />

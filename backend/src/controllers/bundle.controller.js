@@ -1,5 +1,6 @@
 const Bundle = require('../models/Bundle');
 const { validationResult } = require('express-validator');
+const { withResolvedBundlePrice } = require('../utils/pricing');
 
 // @desc    Create new bundle
 // @route   POST /api/bundles
@@ -30,11 +31,13 @@ exports.createBundle = async (req, res, next) => {
         });
 
         const populatedBundle = await Bundle.findById(bundle._id)
-            .populate('products.product', 'name sku cartonSize price wholesaleCost');
+            .populate('products.product', 'name sku cartonSize price wholesaleCost countryPrices');
 
         res.status(201).json({
             success: true,
-            data: populatedBundle
+            data: req.query.countryId
+                ? withResolvedBundlePrice(populatedBundle, req.query.countryId)
+                : populatedBundle
         });
     } catch (error) {
         if (error.code === 11000) {
@@ -58,15 +61,22 @@ exports.getBundles = async (req, res, next) => {
         if (status) query.status = status;
 
         const bundles = await Bundle.find(query)
-            .populate('products.product', 'name sku cartonSize price wholesaleCost')
+            .populate('products.product', 'name sku cartonSize price wholesaleCost countryPrices')
             .populate('createdBy', 'name email')
             .populate('priceHistory.editedBy', 'username email')
             .sort({ createdAt: -1 });
 
+        // Resolve the active country's retail price (and the nested products'
+        // prices) so clients keep reading `bundle.retailPrice`.
+        const countryId = req.query.countryId;
+        const data = countryId
+            ? bundles.map((bundle) => withResolvedBundlePrice(bundle, countryId))
+            : bundles;
+
         res.status(200).json({
             success: true,
             count: bundles.length,
-            data: bundles
+            data
         });
     } catch (error) {
         next(error);
@@ -79,7 +89,7 @@ exports.getBundles = async (req, res, next) => {
 exports.getBundle = async (req, res, next) => {
     try {
         const bundle = await Bundle.findById(req.params.id)
-            .populate('products.product', 'name sku cartonSize price wholesaleCost')
+            .populate('products.product', 'name sku cartonSize price wholesaleCost countryPrices')
             .populate('createdBy', 'name email')
             .populate('priceHistory.editedBy', 'username email');
 
@@ -92,7 +102,9 @@ exports.getBundle = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            data: bundle
+            data: req.query.countryId
+                ? withResolvedBundlePrice(bundle, req.query.countryId)
+                : bundle
         });
     } catch (error) {
         next(error);
@@ -132,11 +144,13 @@ exports.updateBundle = async (req, res, next) => {
             req.params.id,
             { name, description, products, status },
             { new: true, runValidators: true }
-        ).populate('products.product', 'name sku cartonSize price wholesaleCost');
+        ).populate('products.product', 'name sku cartonSize price wholesaleCost countryPrices');
 
         res.status(200).json({
             success: true,
-            data: bundle
+            data: req.query.countryId
+                ? withResolvedBundlePrice(bundle, req.query.countryId)
+                : bundle
         });
     } catch (error) {
         if (error.code === 11000) {
@@ -188,30 +202,64 @@ exports.updateBundlePrice = async (req, res, next) => {
             });
         }
 
-        const { retailPrice, reason } = req.body;
+        const { retailPrice, reason, countryId } = req.body;
 
-        // Record price change in history
+        if (!countryId) {
+            return res.status(400).json({
+                success: false,
+                message: 'countryId is required'
+            });
+        }
+
+        const target = countryId.toString();
+        const existingIndex = bundle.countryPrices.findIndex(
+            (cp) => cp.countryId && cp.countryId.toString() === target
+        );
+        const previousPrice =
+            existingIndex === -1 ? null : bundle.countryPrices[existingIndex].retailPrice;
+
+        // Blank/undefined clears the country's override — the bundle falls back
+        // to the sum of its products' prices in that country.
+        const cleared = retailPrice === undefined || retailPrice === '' || retailPrice === null;
+        const newPrice = cleared ? null : Number(retailPrice);
+
+        if (!cleared && (!Number.isFinite(newPrice) || newPrice < 0)) {
+            return res.status(400).json({
+                success: false,
+                message: 'retailPrice must be a non-negative number'
+            });
+        }
+
+        // Price history is per country, so each market keeps its own audit trail
         bundle.priceHistory.push({
-            previousPrice: bundle.retailPrice,
-            newPrice: retailPrice !== undefined && retailPrice !== '' ? Number(retailPrice) : null,
+            countryId,
+            previousPrice,
+            newPrice,
             reason: reason || '',
             editedBy: req.user.id,
             editedAt: new Date()
         });
 
-        // Update the retail price (null = revert to calculated)
-        bundle.retailPrice = retailPrice !== undefined && retailPrice !== '' ? Number(retailPrice) : null;
+        if (cleared) {
+            if (existingIndex !== -1) {
+                bundle.countryPrices.splice(existingIndex, 1);
+            }
+        } else if (existingIndex === -1) {
+            bundle.countryPrices.push({ countryId, retailPrice: newPrice });
+        } else {
+            bundle.countryPrices[existingIndex].retailPrice = newPrice;
+        }
 
         await bundle.save();
 
         const populatedBundle = await Bundle.findById(bundle._id)
-            .populate('products.product', 'name sku cartonSize price wholesaleCost')
+            .populate('products.product', 'name sku cartonSize price wholesaleCost countryPrices')
             .populate('priceHistory.editedBy', 'username email')
             .populate('createdBy', 'name email');
 
         res.status(200).json({
             success: true,
-            data: populatedBundle
+            data: withResolvedBundlePrice(populatedBundle, countryId)
         });
     } catch (error) {
         next(error);
@@ -224,7 +272,7 @@ exports.updateBundlePrice = async (req, res, next) => {
 exports.getBundlePriceHistory = async (req, res, next) => {
     try {
         const bundle = await Bundle.findById(req.params.id)
-            .select('name retailPrice priceHistory')
+            .select('name retailPrice countryPrices priceHistory')
             .populate('priceHistory.editedBy', 'username email');
 
         if (!bundle) {
@@ -234,14 +282,29 @@ exports.getBundlePriceHistory = async (req, res, next) => {
             });
         }
 
-        // Return history sorted newest-first
-        const history = [...bundle.priceHistory].reverse();
+        const countryId = req.query.countryId;
+
+        // Show only the active country's history — prices in different
+        // currencies must never be listed side by side.
+        let history = [...bundle.priceHistory].reverse();
+        if (countryId) {
+            const target = countryId.toString();
+            history = history.filter(
+                (entry) => entry.countryId && entry.countryId.toString() === target
+            );
+        }
+
+        const resolved = countryId
+            ? (bundle.countryPrices || []).find(
+                  (cp) => cp.countryId && cp.countryId.toString() === countryId.toString()
+              )
+            : null;
 
         res.status(200).json({
             success: true,
             data: {
                 bundleName: bundle.name,
-                currentRetailPrice: bundle.retailPrice,
+                currentRetailPrice: resolved ? resolved.retailPrice : null,
                 history
             }
         });

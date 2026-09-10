@@ -5,8 +5,12 @@ import api from '../utils/api';
 import Spinner from '../components/Spinner';
 import PermissionGuard from '../components/PermissionGuard';
 import { PERMISSIONS } from '../utils/constants';
+import useCurrency from '../hooks/useCurrency';
+import { useCountry } from '../context/CountryContext';
 
 const Bundles = () => {
+    const { formatShort, symbol } = useCurrency();
+    const { activeCountry } = useCountry();
     const [bundles, setBundles] = useState([]);
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -35,13 +39,15 @@ const Bundles = () => {
     const [historyLoading, setHistoryLoading] = useState(false);
 
     useEffect(() => {
+        if (!activeCountry?._id) return;
+        // Prices are per country, so re-fetch whenever the country changes.
         fetchBundles();
         fetchProducts();
-    }, []);
+    }, [activeCountry?._id]);
 
     const fetchBundles = async () => {
         try {
-            const res = await api.get('/bundles');
+            const res = await api.get(`/bundles?countryId=${activeCountry._id}`);
             setBundles(res.data.data);
         } catch (err) {
             toast.error('Failed to load bundles');
@@ -52,7 +58,7 @@ const Bundles = () => {
 
     const fetchProducts = async () => {
         try {
-            const res = await api.get('/products?limit=1000');
+            const res = await api.get(`/products?limit=1000&countryId=${activeCountry._id}`);
             setProducts(res.data.data.filter(p => p.status === 'ACTIVE'));
         } catch (err) {
             console.error('Failed to load products', err);
@@ -153,6 +159,14 @@ const Bundles = () => {
         }, 0);
     };
 
+    // Products carry a price per country. Any that are unpriced in the active
+    // country are missing from the calculated total, so name them rather than
+    // quietly under-counting the bundle.
+    const unpricedProductsIn = (bundle) =>
+        (bundle.products || [])
+            .filter((item) => item.product && item.product.price == null)
+            .map((item) => item.product.name);
+
     const calculateBundleWholesalePrice = (bundle) => {
         return bundle.products.reduce((sum, item) => {
             return sum + (item.quantity * (item.product?.wholesaleCost || 0));
@@ -182,6 +196,7 @@ const Bundles = () => {
         setPriceSubmitting(true);
         try {
             await api.put(`/bundles/${pricingBundle._id}/price`, {
+                countryId: activeCountry._id,
                 retailPrice: priceFormData.retailPrice !== '' ? Number(priceFormData.retailPrice) : null,
                 reason: priceFormData.reason
             });
@@ -202,6 +217,7 @@ const Bundles = () => {
         setPriceSubmitting(true);
         try {
             await api.put(`/bundles/${pricingBundle._id}/price`, {
+                countryId: activeCountry._id,
                 retailPrice: null,
                 reason: 'Reset to calculated price'
             });
@@ -220,7 +236,7 @@ const Bundles = () => {
         setIsHistoryModalOpen(true);
         setHistoryLoading(true);
         try {
-            const res = await api.get(`/bundles/${bundle._id}/price-history`);
+            const res = await api.get(`/bundles/${bundle._id}/price-history?countryId=${activeCountry._id}`);
             setHistoryData(res.data.data);
         } catch (err) {
             toast.error('Failed to load price history');
@@ -380,14 +396,14 @@ const Bundles = () => {
                                                     {hasCustomPrice ? (
                                                         <>
                                                             <span style={{ fontWeight: 600, color: '#059669' }}>
-                                                                ₦{customPrice.toLocaleString()}
+                                                                {formatShort(customPrice)}
                                                             </span>
                                                             <span style={{
                                                                 textDecoration: 'line-through',
                                                                 color: '#94A3B8',
                                                                 fontSize: '12px'
                                                             }}>
-                                                                ₦{calculatedPrice.toLocaleString()}
+                                                                {formatShort(calculatedPrice)}
                                                             </span>
                                                             {discount > 0 && (
                                                                 <span style={{
@@ -413,7 +429,22 @@ const Bundles = () => {
                                                             </span>
                                                         </>
                                                     ) : (
-                                                        <span>₦{calculatedPrice.toLocaleString()}</span>
+                                                        <span>{formatShort(calculatedPrice)}</span>
+                                                    )}
+                                                    {unpricedProductsIn(bundle).length > 0 && (
+                                                        <span
+                                                            style={{
+                                                                background: '#FEF3C7',
+                                                                color: '#B45309',
+                                                                padding: '1px 6px',
+                                                                borderRadius: '4px',
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                            }}
+                                                            title={`Not priced in ${activeCountry?.name}: ${unpricedProductsIn(bundle).join(', ')}`}
+                                                        >
+                                                            {unpricedProductsIn(bundle).length} unpriced
+                                                        </span>
                                                     )}
                                                     <PermissionGuard permission={PERMISSIONS.MANAGE_INVENTORY}>
                                                         <button
@@ -445,7 +476,7 @@ const Bundles = () => {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td>₦{calculateBundleWholesalePrice(bundle).toLocaleString()}</td>
+                                            <td>{formatShort(calculateBundleWholesalePrice(bundle))}</td>
                                             <td>
                                                 <span className={`badge ${bundle.status === 'ACTIVE' ? 'badge-success' : 'badge-secondary'}`}>
                                                     {bundle.status}
@@ -632,20 +663,20 @@ const Bundles = () => {
                                     </div>
                                     <div style={{ fontSize: '13px', color: '#64748B' }}>
                                         Calculated Price: <strong style={{ color: '#1E293B' }}>
-                                            ₦{calculateBundleRetailPrice(pricingBundle).toLocaleString()}
+                                            {formatShort(calculateBundleRetailPrice(pricingBundle))}
                                         </strong>
                                     </div>
                                     {pricingBundle.retailPrice != null && (
                                         <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
                                             Current Custom Price: <strong style={{ color: '#059669' }}>
-                                                ₦{pricingBundle.retailPrice.toLocaleString()}
+                                                {formatShort(pricingBundle.retailPrice)}
                                             </strong>
                                         </div>
                                     )}
                                 </div>
 
                                 <div className="form-group">
-                                    <label>New Retail Price (₦)</label>
+                                    <label>New Retail Price ({symbol})</label>
                                     <input
                                         type="number"
                                         min="0"
@@ -755,13 +786,13 @@ const Bundles = () => {
                                                     }}>
                                                         <span style={{ color: entry.previousPrice != null ? '#94A3B8' : '#64748B' }}>
                                                             {entry.previousPrice != null
-                                                                ? `₦${entry.previousPrice.toLocaleString()}`
+                                                                ? formatShort(entry.previousPrice)
                                                                 : 'Calculated'}
                                                         </span>
                                                         <FiArrowRight size={14} style={{ color: '#94A3B8' }} />
                                                         <span style={{ color: entry.newPrice != null ? '#059669' : '#64748B' }}>
                                                             {entry.newPrice != null
-                                                                ? `₦${entry.newPrice.toLocaleString()}`
+                                                                ? formatShort(entry.newPrice)
                                                                 : 'Calculated'}
                                                         </span>
                                                     </div>

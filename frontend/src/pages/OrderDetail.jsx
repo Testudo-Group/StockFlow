@@ -7,11 +7,13 @@ import Spinner from '../components/Spinner';
 import PermissionGuard from '../components/PermissionGuard';
 import { PERMISSIONS } from '../utils/constants';
 import { useCountry } from '../context/CountryContext';
+import useCurrency from '../hooks/useCurrency';
 
 const OrderDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { activeCountry } = useCountry();
+    const { format } = useCurrency();
     const [order, setOrder] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -349,16 +351,16 @@ ${itemsList}
                             Total Amount
                         </div>
                         <div style={{ fontSize: '2rem', fontWeight: 800, lineHeight: '1' }}>
-                            ₦{order.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {format(order.totalAmount)}
                         </div>
                         {order.discountAmount > 0 && (
                             <div style={{ fontSize: '0.8rem', marginTop: '0.5rem', opacity: 0.9 }}>
-                                Includes <span style={{ fontWeight: 600 }}>₦{order.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> discount
+                                Includes <span style={{ fontWeight: 600 }}>{format(order.discountAmount)}</span> discount
                             </div>
                         )}
                         {order.deliveryFee > 0 && (
                             <div style={{ fontSize: '0.8rem', marginTop: '0.5rem', opacity: 0.9 }}>
-                                Includes <span style={{ fontWeight: 600 }}>₦{order.deliveryFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> delivery fee
+                                Includes <span style={{ fontWeight: 600 }}>{format(order.deliveryFee)}</span> delivery fee
                             </div>
                         )}
                     </div>
@@ -525,10 +527,10 @@ ${itemsList}
                                                 )}
                                             </td>
                                             <td style={{ padding: '16px 12px', textAlign: 'right', color: '#64748B', fontSize: '0.9rem' }}>
-                                                ₦{(item.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {format(item.price || 0)}
                                             </td>
                                             <td style={{ padding: '16px 12px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontSize: '0.95rem' }}>
-                                                ₦{(item.quantity * (item.price || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {format(item.quantity * (item.price || 0))}
                                             </td>
                                         </tr>
                                     );
@@ -542,7 +544,7 @@ ${itemsList}
                                                 Subtotal:
                                             </td>
                                             <td style={{ padding: '16px 12px 6px', textAlign: 'right', fontSize: '1rem', color: '#1E293B', fontWeight: 500 }}>
-                                                ₦{(order.subtotal || (order.totalAmount + order.discountAmount - (order.deliveryFee || 0)))?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {format(order.subtotal || (order.totalAmount + order.discountAmount - (order.deliveryFee || 0)))}
                                             </td>
                                         </tr>
                                         {order.discountAmount > 0 && (
@@ -551,7 +553,7 @@ ${itemsList}
                                                     Discount {order.discountType === 'global' ? '(Global)' : order.discountType === 'individual' ? '(Individual Items)' : ''}:
                                                 </td>
                                                 <td style={{ padding: '6px 12px', textAlign: 'right', fontSize: '1rem', color: '#EF4444', fontWeight: 500 }}>
-                                                    - ₦{order.discountAmount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    - {format(order.discountAmount)}
                                                 </td>
                                             </tr>
                                         )}
@@ -561,7 +563,7 @@ ${itemsList}
                                                     Delivery Fee:
                                                 </td>
                                                 <td style={{ padding: '6px 12px', textAlign: 'right', fontSize: '1rem', color: '#1E293B', fontWeight: 500 }}>
-                                                    + ₦{order.deliveryFee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    + {format(order.deliveryFee)}
                                                 </td>
                                             </tr>
                                         )}
@@ -570,7 +572,7 @@ ${itemsList}
                                                 Final Total Amount:
                                             </td>
                                             <td style={{ padding: '12px', textAlign: 'right', fontSize: '1.25rem', fontWeight: 800, color: '#4880FF' }}>
-                                                ₦{order.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {format(order.totalAmount)}
                                             </td>
                                         </tr>
                                     </>
@@ -580,7 +582,7 @@ ${itemsList}
                                             Total Amount:
                                         </td>
                                         <td style={{ padding: '16px 12px', textAlign: 'right', fontSize: '1.25rem', fontWeight: 800, color: '#4880FF' }}>
-                                            ₦{order.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {format(order.totalAmount)}
                                         </td>
                                     </tr>
                                 )}

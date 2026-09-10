@@ -4,6 +4,7 @@ import api from '../utils/api';
 import Spinner from '../components/Spinner';
 import ExportButton from '../components/ExportButton';
 import { useCountry } from '../context/CountryContext';
+import useCurrency from '../hooks/useCurrency';
 
 const TYPE_META = {
     IN:           { label: 'Stock In',       color: '#10B981', bg: '#D1FAE5' },
@@ -12,9 +13,6 @@ const TYPE_META = {
     TRANSFER_IN:  { label: 'Transfer In',     color: '#6366F1', bg: '#EDE9FE' },
     TRANSFER_OUT: { label: 'Transfer Out',    color: '#8B5CF6', bg: '#EDE9FE' },
 };
-
-const fmt = (n) =>
-    `₦${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const fmtDate = (d) =>
     d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -29,6 +27,8 @@ const StatCard = ({ label, value, sub, color }) => (
 
 const InventoryHistory = () => {
     const { activeCountry } = useCountry();
+    const { format, symbol } = useCurrency();
+    const fmt = (n) => format(Number(n || 0));
     const [entries, setEntries] = useState([]);
     const [loading, setLoading] = useState(true);
     const [warehouses, setWarehouses] = useState([]);
@@ -53,7 +53,7 @@ const InventoryHistory = () => {
     useEffect(() => {
         if (!activeCountry?._id) return;
         const countryParam = `?countryId=${activeCountry._id}`;
-        Promise.all([api.get(`/warehouses${countryParam}`), api.get('/products?limit=1000')])
+        Promise.all([api.get(`/warehouses${countryParam}`), api.get(`/products?limit=1000&countryId=${activeCountry._id}&includeUnpriced=true`)])
             .then(([wh, pr]) => {
                 setWarehouses(wh.data.data || []);
                 setProducts((pr.data.data || []).filter(p => p.status === 'ACTIVE'));
@@ -129,7 +129,7 @@ const InventoryHistory = () => {
         { key: 'warehouse', label: 'Warehouse' },
         { key: 'change', label: 'Qty Change' },
         { key: 'balanceAfter', label: 'Balance After' },
-        { key: 'valueAfter', label: 'Inventory Value After (₦)' },
+        { key: 'valueAfter', label: `Inventory Value After (${symbol})` },
         { key: 'reason', label: 'Reason' },
         { key: 'reference', label: 'Reference' },
         { key: 'performedBy', label: 'Performed By' },
@@ -262,7 +262,7 @@ const InventoryHistory = () => {
                                             <td style={{ textAlign: 'right', fontWeight: 600, color: '#1D4ED8', fontSize: '0.88rem' }}>
                                                 {e.valueAfter > 0 ? fmt(e.valueAfter) : (
                                                     <span style={{ color: '#94A3B8', fontSize: '0.78rem' }}>
-                                                        bal:{e._balanceAfter ?? '?'} × ₦{e._costUsed ?? '?'}
+                                                        bal:{e._balanceAfter ?? '?'} × {symbol}{e._costUsed ?? '?'}
                                                     </span>
                                                 )}
                                             </td>

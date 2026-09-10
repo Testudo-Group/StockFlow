@@ -5,6 +5,7 @@ import { FiPlus, FiTrash2 } from 'react-icons/fi';
 import api from '../../utils/api';
 import Spinner from '../../components/Spinner';
 import { useCountry } from '../../context/CountryContext';
+import useCurrency from '../../hooks/useCurrency';
 
 // Reused from OrderCreate — searchable product dropdown
 const ProductSearchSelect = ({ value, options, onChange, placeholder }) => {
@@ -73,11 +74,11 @@ const ProductSearchSelect = ({ value, options, onChange, placeholder }) => {
     );
 };
 
-const formatCurrency = (n) => `₦${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 const SOROrderCreate = () => {
     const navigate = useNavigate();
     const { activeCountry } = useCountry();
+    const { format, symbol } = useCurrency();
+    const formatCurrency = (n) => format(Number(n || 0));
     const [loading, setLoading] = useState(false);
 
     // Reference data
@@ -109,7 +110,7 @@ const SOROrderCreate = () => {
         Promise.all([
             api.get(`/sor/customers?limit=500&countryId=${activeCountry._id}`),
             api.get(`/regions${countryParam}`),
-            api.get('/products?limit=500'),
+            api.get(`/products?limit=500&countryId=${activeCountry._id}`),
         ]).then(([custRes, regRes, prodRes]) => {
             setSorCustomers(custRes.data.data || []);
             setRegions(regRes.data.data || []);
@@ -360,7 +361,7 @@ const SOROrderCreate = () => {
                                 <input type="number" min="0" value={discountAmount || ''} onChange={e => setDiscountAmount(parseFloat(e.target.value) || 0)} placeholder="0"
                                     onWheel={e => e.target.blur()}
                                     style={{ width: '120px', padding: '4px 8px', borderRadius: '5px', border: '1px solid #FCD34D', fontSize: '13px' }} />
-                                <span style={{ fontSize: '11px', color: '#78350F' }}>₦ off total order</span>
+                                <span style={{ fontSize: '11px', color: '#78350F' }}>{symbol} off total order</span>
                             </>
                         )}
                     </div>
@@ -371,7 +372,7 @@ const SOROrderCreate = () => {
                         <input type="number" min="0" value={deliveryFee || ''} onChange={e => setDeliveryFee(parseFloat(e.target.value) || 0)} placeholder="0"
                             onWheel={e => e.target.blur()}
                             style={{ width: '140px', padding: '6px 12px', borderRadius: '5px', border: '1px solid #BAE6FD', fontSize: '13px' }} />
-                        <span style={{ fontSize: '12px', color: '#0369A1' }}>₦ (optional)</span>
+                        <span style={{ fontSize: '12px', color: '#0369A1' }}>{symbol} (optional)</span>
                     </div>
 
                     {/* Item rows */}
@@ -396,7 +397,7 @@ const SOROrderCreate = () => {
                                     <input type="number" value={item.price || ''} readOnly disabled style={{ background: '#f5f5f5', cursor: 'not-allowed' }} />
                                 </div>
                                 <div className="form-group" style={{ width: '120px', minWidth: '90px' }}>
-                                    <label>Discount/Unit <span style={{ fontSize: '10px', color: '#F59E0B', fontWeight: 600 }}>(₦ off)</span></label>
+                                    <label>Discount/Unit <span style={{ fontSize: '10px', color: '#F59E0B', fontWeight: 600 }}>({symbol} off)</span></label>
                                     <input
                                         type="number" min="0"
                                         value={item.discount || ''}
