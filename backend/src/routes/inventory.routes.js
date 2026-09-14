@@ -2,6 +2,8 @@ const express = require('express');
 const { body } = require('express-validator');
 const {
     adjustStock,
+    bulkAdjustStock,
+    previewBulkAdjust,
     getBalance,
     getLedger,
     transferStock,
@@ -29,6 +31,26 @@ router.post(
         body('reason').notEmpty().withMessage('Reason is required'),
     ],
     adjustStock
+);
+
+// Spreadsheet upload: preview validates only, bulk-adjust applies the batch
+const bulkValidators = [
+    body('mode').isIn(['SET', 'IN', 'OUT']).withMessage('Mode must be SET, IN or OUT'),
+    body('rows').isArray({ min: 1 }).withMessage('At least one row is required'),
+];
+
+router.post(
+    '/bulk-adjust/preview',
+    checkPermission(PERMISSIONS.MANAGE_INVENTORY),
+    bulkValidators,
+    previewBulkAdjust
+);
+
+router.post(
+    '/bulk-adjust',
+    checkPermission(PERMISSIONS.MANAGE_INVENTORY),
+    [...bulkValidators, body('reason').notEmpty().withMessage('Reason is required')],
+    bulkAdjustStock
 );
 
 router.post(

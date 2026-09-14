@@ -10,6 +10,7 @@ const {
     resolveProductPrice,
     withResolvedPrice,
 } = require('../utils/pricing');
+const { validateRows } = require('../services/inventory.bulk.service');
 
 // @desc    Adjust stock (IN, OUT, ADJUSTMENT, TRANSFER)
 // @route   POST /api/inventory/adjust
@@ -509,6 +510,118 @@ exports.transferStock = async (req, res, next) => {
             },
         });
     } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Validate a spreadsheet upload without writing anything
+// @route   POST /api/inventory/bulk-adjust/preview
+// @access  Private (Manage Inventory)
+exports.previewBulkAdjust = async (req, res, next) => {
+    try {
+        const validation = validationResult(req);
+        if (!validation.isEmpty()) {
+            return res.status(400).json({ success: false, errors: validation.array() });
+        }
+
+        const { mode, rows } = req.body;
+
+        const { valid, errors, resolved } = await validateRows({
+            rows,
+            mode,
+            countryId: req.countryId,
+        });
+
+        res.status(200).json({
+            success: true,
+            data: { valid, errors, rows: resolved, counts: { total: Array.isArray(rows) ? rows.length : 0, invalid: errors.length } },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Apply a spreadsheet of stock levels in one batch
+// @route   POST /api/inventory/bulk-adjust
+// @access  Private (Manage Inventory)
+exports.bulkAdjustStock = async (req, res, next) => {
+    const session = await mongoose.startSession();
+    try {
+        const validation = validationResult(req);
+        if (!validation.isEmpty()) {
+            await session.endSession();
+            return res.status(400).json({ success: false, errors: validation.array() });
+        }
+
+        const { mode, reason, rows, reference } = req.body;
+
+        // The browser previewed this file, but the sheet may have changed and
+        // stock moves between preview and import — re-check everything.
+        const { valid, errors, resolved } = await validateRows({
+            rows,
+            mode,
+            countryId: req.countryId,
+        });
+
+        if (!valid) {
+            await session.endSession();
+            return res.status(400).json({
+                success: false,
+                message: `${errors.length} row${errors.length === 1 ? '' : 's'} could not be imported — nothing was changed`,
+                errors,
+            });
+        }
+
+        // All-or-nothing: the whole sheet lands, or none of it does.
+        session.startTransaction();
+
+        const ledgerEntries = [];
+        for (const row of resolved) {
+            const update = row.setQuantity !== undefined
+                ? { $set: { quantity: row.setQuantity, lastUpdated: new Date() } }
+                : { $inc: { quantity: row.change }, $set: { lastUpdated: new Date() } };
+
+            const balance = await InventoryBalance.findOneAndUpdate(
+                { product: row.product, warehouse: row.warehouse, countryId: req.countryId },
+                update,
+                { new: true, upsert: true, session, setDefaultsOnInsert: true }
+            );
+
+            ledgerEntries.push({
+                product: row.product,
+                warehouse: row.warehouse,
+                change: row.change,
+                type: mode === 'SET' ? 'ADJUSTMENT' : mode,
+                reason: String(reason).trim(),
+                reference: reference || `Bulk upload (${mode})`,
+                balanceAfter: balance.quantity,
+                performedBy: req.user.id,
+                countryId: req.countryId,
+            });
+        }
+
+        // A SET row that changes nothing still resolves cleanly; skip the noise.
+        const meaningful = ledgerEntries.filter((e) => e.change !== 0);
+        if (meaningful.length > 0) {
+            await StockLedger.create(meaningful, { session, ordered: true });
+        }
+
+        await session.commitTransaction();
+        await session.endSession();
+
+        res.status(200).json({
+            success: true,
+            data: {
+                applied: resolved.length,
+                ledgerEntries: meaningful.length,
+                unchanged: resolved.length - meaningful.length,
+            },
+        });
+    } catch (error) {
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
+        await session.endSession();
         next(error);
     }
 };
