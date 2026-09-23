@@ -5,6 +5,7 @@ const SOROrder = require('../models/SOROrder');
 const Product = require('../models/Product');
 const Country = require('../models/Country');
 const { findUnpricedItems } = require('../utils/pricing');
+const { withDisplayLines } = require('../utils/orderLines');
 const StockLedger = require('../models/StockLedger');
 const InventoryBalance = require('../models/InventoryBalance');
 const WhatsAppService = require('../services/whatsapp.service');
@@ -153,7 +154,9 @@ exports.getOrders = async (req, res, next) => {
         res.status(200).json({
             success: true,
             count: orders.length,
-            data: orders,
+            // Lines carry their resolved pre-discount figures so the screens
+            // show the same prices the receipt does.
+            data: orders.map(withDisplayLines),
         });
     } catch (error) {
         next(error);
@@ -180,7 +183,7 @@ exports.getOrder = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            data: order,
+            data: withDisplayLines(order),
         });
     } catch (error) {
         next(error);

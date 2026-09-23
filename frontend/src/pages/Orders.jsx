@@ -553,7 +553,13 @@ const Orders = () => {
                                                                                     fontSize: '0.85rem',
                                                                                     color: '#64748B'
                                                                                 }}>
-                                                                                    {format(item.price || 0)}
+                                                                                    {/* The actual price, before any discount */}
+                                                                                    {format(item.displayUnitPrice ?? item.price ?? 0)}
+                                                                                    {item.displayUnitDiscount > 0 && (
+                                                                                        <div style={{ fontSize: '0.75rem', color: '#EF4444' }}>
+                                                                                            less {format(item.displayUnitDiscount)} each
+                                                                                        </div>
+                                                                                    )}
                                                                                 </td>
                                                                                 <td style={{ 
                                                                                     padding: '12px', 
@@ -562,7 +568,12 @@ const Orders = () => {
                                                                                     color: '#10B981',
                                                                                     fontWeight: 600
                                                                                 }}>
-                                                                                    {format((item.quantity || 0) * (item.price || 0))}
+                                                                                    {format(item.displayLineTotal ?? ((item.quantity || 0) * (item.price || 0)))}
+                                                                                    {item.displayLineDiscount > 0 && (
+                                                                                        <div style={{ fontSize: '0.75rem', color: '#EF4444' }}>
+                                                                                            - {format(item.displayLineDiscount)}
+                                                                                        </div>
+                                                                                    )}
                                                                                 </td>
                                                                             </tr>
                                                                         ))}

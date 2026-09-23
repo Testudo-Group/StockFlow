@@ -20,19 +20,28 @@ const netLineSum = (order) =>
 /**
  * The actual (pre-discount) unit price for a line.
  *
- * Legacy global-discount orders spread the discount proportionally into each
- * line's `price`; when the order's pre-discount `subtotal` is known we can undo
- * that spread. Legacy individual discounts cannot be recovered per line, so
- * they fall back to the net price.
+ * Orders placed before per-line prices were recorded only kept the net price,
+ * but they do keep the pre-discount `subtotal`. Scaling each line back up by
+ * subtotal/net gives the actual prices, and the scaled-away amounts add back
+ * up to the order's discount.
+ *
+ * For an individual discount this spreads the discount across the lines in
+ * proportion to their value, because which line it originally came off was
+ * never stored. The figures reconcile; the attribution is a best estimate.
  */
 const lineOriginalPrice = (order, item) => {
     if (item.originalPrice != null) return Number(item.originalPrice) || 0;
 
     const net = Number(item.price) || 0;
+    const hasDiscount = order.discountType && order.discountType !== 'none';
 
-    if (order.discountType === 'global' && Number(order.subtotal) > 0) {
+    if (hasDiscount && Number(order.subtotal) > 0) {
         const netSum = netLineSum(order);
-        if (netSum > 0) return net * (Number(order.subtotal) / netSum);
+        // Only scale up — a subtotal already equal to the net sum (an order
+        // saved before the totals were made consistent) leaves prices as they are.
+        if (netSum > 0 && Number(order.subtotal) > netSum) {
+            return net * (Number(order.subtotal) / netSum);
+        }
     }
 
     return net;
@@ -41,9 +50,13 @@ const lineOriginalPrice = (order, item) => {
 /**
  * Discount per unit on a line. Only individual discounts live on lines —
  * a global discount is a single figure on the order and shows in the summary.
+ *
+ * A stored `discount` is trusted only when the line also carries the price it
+ * was discounted from: the schema defaults `discount` to 0, so a legacy line
+ * would otherwise look like a deliberate zero and hide its discount.
  */
 const lineUnitDiscount = (order, item) => {
-    if (item.discount != null) return Math.max(0, Number(item.discount) || 0);
+    if (item.originalPrice != null) return Math.max(0, Number(item.discount) || 0);
 
     if (order.discountType === 'individual') {
         return Math.max(0, lineOriginalPrice(order, item) - (Number(item.price) || 0));

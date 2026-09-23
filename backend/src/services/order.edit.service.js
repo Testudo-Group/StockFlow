@@ -119,17 +119,22 @@ async function editOrder(orderId, updatePayload, userId, countryId) {
     // -------------------------------------------------------------------------
     // 6. Recalculate totals
     // -------------------------------------------------------------------------
-    const subtotal = order.items.reduce(
+    // item.price is the NET unit price — the discount is already taken off it
+    // before the order is saved. Subtracting discountAmount here as well would
+    // apply the same discount twice, so the total is built from the net prices,
+    // exactly as createOrder does.
+    const netSubtotal = order.items.reduce(
         (sum, item) => sum + item.quantity * (item.price || 0),
         0
     );
 
     const effectiveDiscount = order.discountType === 'none' ? 0 : (order.discountAmount || 0);
     const deliveryFee = order.deliveryFee || 0;
-    const totalAmount = Math.max(0, subtotal - effectiveDiscount + deliveryFee);
 
-    order.subtotal = subtotal;
-    order.totalAmount = totalAmount;
+    // `subtotal` is the pre-discount figure, matching what createOrder stores,
+    // so that subtotal - discount + delivery === totalAmount on documents.
+    order.subtotal = netSubtotal + effectiveDiscount;
+    order.totalAmount = Math.max(0, netSubtotal + deliveryFee);
 
     // -------------------------------------------------------------------------
     // 7. Append EDITED log entry

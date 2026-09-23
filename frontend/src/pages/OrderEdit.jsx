@@ -155,6 +155,8 @@ const OrderEdit = () => {
     // Form state
     const [orderType, setOrderType] = useState('RETAIL');
     const [applyDiscount, setApplyDiscount] = useState(false);
+    // Set when a stored discount cannot be itemised back onto the lines
+    const [legacyDiscount, setLegacyDiscount] = useState(null);
     const [discountType, setDiscountType] = useState('none');
     const [globalDiscount, setGlobalDiscount] = useState(0);
     const [deliveryFee, setDeliveryFee] = useState(0);
@@ -223,11 +225,25 @@ const OrderEdit = () => {
                 setOrderType(o.orderType || 'RETAIL');
                 setDeliveryFee(o.deliveryFee || 0);
 
-                // Restore discount state
-                if (o.discountType && o.discountType !== 'none') {
+                // Lines store the net price plus the actual price they were
+                // discounted from. Without originalPrice (orders placed before
+                // that was recorded) the discount cannot be put back on the
+                // lines, and restoring it would discount the net price a second
+                // time — so leave it off and say so.
+                const hasLinePrices = (o.items || []).length > 0
+                    && (o.items || []).every((item) => item.originalPrice != null);
+                const hasDiscount = o.discountType && o.discountType !== 'none' && (o.discountAmount || 0) > 0;
+
+                if (hasDiscount && hasLinePrices) {
                     setApplyDiscount(true);
                     setDiscountType(o.discountType);
                     if (o.discountType === 'global') setGlobalDiscount(o.discountAmount || 0);
+                    setLegacyDiscount(null);
+                } else if (hasDiscount) {
+                    setApplyDiscount(false);
+                    setLegacyDiscount({ amount: o.discountAmount || 0, type: o.discountType });
+                } else {
+                    setLegacyDiscount(null);
                 }
 
                 // Parse address back into fields
@@ -242,7 +258,9 @@ const OrderEdit = () => {
                     zip = stateZip[1] || '';
                 }
 
-                // Map stored items (flat product items) back to form rows
+                // Map stored items (flat product items) back to form rows.
+                // The row carries the actual price with its discount alongside,
+                // which is how the form expects to work with it.
                 const formItems = (o.items || []).map(item => ({
                     type: 'PRODUCT',
                     product: item.product?._id || item.product,
@@ -250,8 +268,8 @@ const OrderEdit = () => {
                     cartonQty: 0,
                     pieceQty: item.quantity || 0,
                     bundleQty: 0,
-                    price: item.price || 0,
-                    discount: o.discountType === 'individual' ? 0 : 0,
+                    price: hasLinePrices ? item.originalPrice : (item.price || 0),
+                    discount: hasLinePrices ? (item.discount || 0) : 0,
                 }));
 
                 setFormData({
@@ -561,6 +579,17 @@ const OrderEdit = () => {
                     <h3>Order Items</h3>
                     {formData.warehouse ? (
                         <div className="items-context">
+                            {/* This order's discount predates per-line discount
+                                tracking, so it cannot be itemised back onto the
+                                rows. Saying so beats silently dropping it. */}
+                            {legacyDiscount && (
+                                <div style={{ background: '#FEF2F2', padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #FECACA', color: '#991B1B', fontSize: '13px' }}>
+                                    <strong>This order has a {legacyDiscount.type} discount of {formatShort(legacyDiscount.amount)}</strong> that was recorded before
+                                    discounts were tracked per line, so it cannot be shown on the rows below.
+                                    Saving will remove it unless you re-enter it as a discount here.
+                                </div>
+                            )}
+
                             {/* Discount Controls */}
                             <div style={{ background: '#FFFBEB', padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #FDE68A' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>

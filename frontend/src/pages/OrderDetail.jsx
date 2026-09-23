@@ -529,10 +529,21 @@ ${itemsList}
                                                 )}
                                             </td>
                                             <td style={{ padding: '16px 12px', textAlign: 'right', color: '#64748B', fontSize: '0.9rem' }}>
-                                                {format(item.price || 0)}
+                                                {/* The actual price, before any discount */}
+                                                {format(item.displayUnitPrice ?? item.price ?? 0)}
+                                                {item.displayUnitDiscount > 0 && (
+                                                    <div style={{ fontSize: '0.75rem', color: '#EF4444', marginTop: '0.25rem' }}>
+                                                        less {format(item.displayUnitDiscount)} each
+                                                    </div>
+                                                )}
                                             </td>
                                             <td style={{ padding: '16px 12px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontSize: '0.95rem' }}>
-                                                {format(item.quantity * (item.price || 0))}
+                                                {format(item.displayLineTotal ?? (item.quantity * (item.price || 0)))}
+                                                {item.displayLineDiscount > 0 && (
+                                                    <div style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600, marginTop: '0.25rem' }}>
+                                                        - {format(item.displayLineDiscount)}
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     );
@@ -546,7 +557,7 @@ ${itemsList}
                                                 Subtotal:
                                             </td>
                                             <td style={{ padding: '16px 12px 6px', textAlign: 'right', fontSize: '1rem', color: '#1E293B', fontWeight: 500 }}>
-                                                {format(order.subtotal || (order.totalAmount + order.discountAmount - (order.deliveryFee || 0)))}
+                                                {format(order.displaySubtotal ?? order.subtotal ?? (order.totalAmount + order.discountAmount - (order.deliveryFee || 0)))}
                                             </td>
                                         </tr>
                                         {order.discountAmount > 0 && (
