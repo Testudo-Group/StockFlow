@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { FiPlus } from 'react-icons/fi';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { FiPlus, FiUploadCloud } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { useCountry } from '../context/CountryContext';
 import api from '../utils/api';
@@ -10,6 +10,9 @@ import StockAdjustmentModal from '../components/StockAdjustmentModal';
 import StockHistoryModal from '../components/StockHistoryModal';
 import StockTransferModal from '../components/StockTransferModal';
 import ExportButton from '../components/ExportButton';
+
+// Pulls in the spreadsheet parser, so it is only fetched when the dialog opens
+const BulkInventoryUploadModal = lazy(() => import('../components/BulkInventoryUploadModal'));
 import useCurrency from '../hooks/useCurrency';
 
 const Inventory = () => {
@@ -37,6 +40,7 @@ const Inventory = () => {
     const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState(null);
 
     useEffect(() => {
@@ -271,6 +275,12 @@ const Inventory = () => {
                             label="Export"
                         />
                     )}
+                    <PermissionGuard permission={PERMISSIONS.MANAGE_INVENTORY}>
+                        <button onClick={() => setIsBulkUploadOpen(true)} className="btn btn-secondary"
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <FiUploadCloud /> Upload Sheet
+                        </button>
+                    </PermissionGuard>
                     <PermissionGuard permission={PERMISSIONS.MANAGE_INVENTORY}>
                         <button onClick={handleManualAdd} className="btn btn-primary">
                             <FiPlus /> Add Inventory
@@ -536,6 +546,16 @@ const Inventory = () => {
                     </table>
                 </div>
                 </>
+            )}
+
+            {isBulkUploadOpen && (
+                <Suspense fallback={null}>
+                    <BulkInventoryUploadModal
+                        isOpen={isBulkUploadOpen}
+                        onClose={() => setIsBulkUploadOpen(false)}
+                        onSuccess={fetchBalances}
+                    />
+                </Suspense>
             )}
 
             {selectedItem && (
