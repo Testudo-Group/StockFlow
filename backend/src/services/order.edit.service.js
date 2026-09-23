@@ -162,7 +162,7 @@ async function editOrder(orderId, updatePayload, userId, countryId) {
         .populate('warehouse', 'name')
         .populate('region', 'name')
         .populate('items.product', 'name sku cartonSize')
-        .populate('countryId', 'currencyCode currencySymbol locale')
+        .populate('countryId', 'isoCode name currencyCode currencySymbol locale')
         .populate('logs.changedBy', 'email');
 
     // -------------------------------------------------------------------------

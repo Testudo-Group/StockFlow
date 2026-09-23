@@ -73,7 +73,7 @@ exports.createOrder = async (req, res, next) => {
         const populatedOrder = await Order.findById(order._id)
             .populate('items.product', 'name sku cartonSize')
             .populate('customer')
-            .populate('countryId', 'currencyCode currencySymbol locale')
+            .populate('countryId', 'isoCode name currencyCode currencySymbol locale')
             .populate('warehouse', 'name')
             .populate('region', 'name');
 
@@ -146,7 +146,7 @@ exports.getOrders = async (req, res, next) => {
         const orders = await Order.find(query)
             .populate('warehouse', 'name')
             .populate('customer')
-            .populate('countryId', 'currencyCode currencySymbol locale')
+            .populate('countryId', 'isoCode name currencyCode currencySymbol locale')
             .populate('items.product', 'name sku')
             .sort({ createdAt: -1 });
 
@@ -310,7 +310,7 @@ exports.downloadReceipt = async (req, res, next) => {
             .populate('region', 'name')
             .populate('items.product', 'name sku cartonSize')
             .populate('customer')
-            .populate('countryId', 'currencyCode currencySymbol locale');
+            .populate('countryId', 'isoCode name currencyCode currencySymbol locale');
 
         if (!order) {
             return res.status(404).json({
@@ -417,7 +417,7 @@ exports.downloadInvoice = async (req, res, next) => {
             .populate('region', 'name')
             .populate('items.product', 'name sku cartonSize')
             .populate('customer')
-            .populate('countryId', 'currencyCode currencySymbol locale');
+            .populate('countryId', 'isoCode name currencyCode currencySymbol locale');
 
         if (!order) {
             return res.status(404).json({

@@ -42,13 +42,22 @@ const reorderTemplateSchema = new mongoose.Schema(
             ref: 'User',
             required: true,
         },
+        // A template names a region and warehouse, both of which belong to one
+        // country — so the template does too, and is only offered there.
+        countryId: {
+            type: mongoose.Schema.ObjectId,
+            ref: 'Country',
+            required: true,
+            index: true,
+        },
     },
     {
         timestamps: true,
     }
 );
 
-// Compound index to ensure unique template names per user
-reorderTemplateSchema.index({ createdBy: 1, name: 1 }, { unique: true });
+// Template names are unique per user within a country, so the same name can
+// be reused for the equivalent template in another market.
+reorderTemplateSchema.index({ createdBy: 1, countryId: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model('ReorderTemplate', reorderTemplateSchema);

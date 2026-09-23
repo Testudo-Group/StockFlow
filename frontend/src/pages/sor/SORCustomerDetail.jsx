@@ -430,6 +430,9 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
     const [orderStates, setOrderStates] = useState([]);
     const [expandedPayment, setExpandedPayment] = useState(null);
     const [outstandingRefresh, setOutstandingRefresh] = useState(0);
+    // 'loading' | 'ready' | 'error' — an empty list means "nothing outstanding"
+    // only once we know the request actually succeeded.
+    const [settlementState, setSettlementState] = useState('loading');
 
     // 'product' → settle loose quantities; 'order' → settle one whole order
     const [mode, setMode] = useState('product');
@@ -454,9 +457,11 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
     // Outstanding units and per-order balances both come from the settlement
     // endpoint, which allocates every payment oldest-order-first.
     useEffect(() => {
+        setSettlementState('loading');
         api.get(`/sor/customers/${customerId}/settlement`)
             .then((res) => {
                 const { orders = [], products = [] } = res.data.data || {};
+                setSettlementState('ready');
                 const outstanding = products.filter((p) => p.outstandingQty > 0);
 
                 setOrderStates(orders);
@@ -471,7 +476,14 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                     orders.some((o) => o.orderId === cur && o.remainingAmount > 0) ? cur : ''
                 );
             })
-            .catch(() => {});
+            .catch(() => {
+                // Never let a failed load read as "everything is settled" —
+                // that is the opposite of the truth and it concerns money.
+                setSettlementState('error');
+                setOrderStates([]);
+                setOutstandingProducts([]);
+                setForm((f) => ({ ...f, items: [] }));
+            });
     }, [customerId, outstandingRefresh]);
 
     // Update qty for a specific row (identified by product id)
@@ -585,6 +597,29 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
 
     return (
         <div>
+            {settlementState === 'error' && (
+                <div
+                    style={{
+                        marginBottom: '1.25rem',
+                        padding: '0.75rem 1rem',
+                        borderRadius: '8px',
+                        border: '1px solid #FECACA',
+                        background: '#FEF2F2',
+                        color: '#991B1B',
+                        fontSize: '0.85rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                    }}
+                >
+                    <FiAlertTriangle size={15} />
+                    <span>
+                        Could not load settlement data, so outstanding orders and products
+                        cannot be shown. Reload the page before recording a payment.
+                    </span>
+                </div>
+            )}
+
             {/* Per-order settlement status */}
             {orderStates.length > 0 && (
                 <div style={{ marginBottom: '1.25rem' }}>
@@ -707,8 +742,15 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                                         ))}
                                     </select>
                                     {formErr.order && <small style={{ color: '#DC2626' }}>{formErr.order}</small>}
-                                    {unsettledOrders.length === 0 && (
+                                    {unsettledOrders.length === 0 && settlementState === 'ready' && (
                                         <small style={{ color: '#10B981' }}>Every order is settled.</small>
+                                    )}
+                                    {settlementState !== 'ready' && (
+                                        <small style={{ color: '#94A3B8' }}>
+                                            {settlementState === 'loading'
+                                                ? 'Loading orders…'
+                                                : 'Orders unavailable — reload to try again.'}
+                                        </small>
                                     )}
                                 </div>
                                 <div className="form-group" style={{ margin: 0 }}>
@@ -896,8 +938,12 @@ const PaymentsPanel = ({ customerId, onPaymentRecorded }) => {
                                 </table>
                             </div>
                         ) : (
-                            <div style={{ textAlign: 'center', padding: '1.5rem', color: '#94A3B8', fontSize: '0.85rem', border: '1px dashed #E2E8F0', borderRadius: '8px' }}>
-                                No outstanding products to settle.
+                            <div style={{ textAlign: 'center', padding: '1.5rem', color: settlementState === 'error' ? '#991B1B' : '#94A3B8', fontSize: '0.85rem', border: '1px dashed #E2E8F0', borderRadius: '8px' }}>
+                                {settlementState === 'ready'
+                                    ? 'No outstanding products to settle.'
+                                    : settlementState === 'loading'
+                                        ? 'Loading outstanding products…'
+                                        : 'Outstanding products could not be loaded — reload to try again.'}
                             </div>
                         )}
                         {formErr.items && <small style={{ color: '#DC2626', display: 'block', marginBottom: '0.25rem' }}>{formErr.items}</small>}

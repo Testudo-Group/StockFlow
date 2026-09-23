@@ -4,12 +4,13 @@
  * Run once against the database before deploying the currency feature:
  *   node backend/migrate-currency.js
  *
- * It does four things:
+ * It does five things:
  *   1. Fills in currency details on every existing country (from the ISO map).
  *   2. Copies each product's legacy price/wholesaleCost into a countryPrices
  *      entry for the default country, so nothing becomes unpriced overnight.
  *   3. Does the same for bundle retail prices and their price history.
  *   4. Stamps existing orders with the currency snapshot used by receipts.
+ *   5. Assigns each reorder template to its warehouse's country.
  *
  * The script is idempotent — running it multiple times is safe. It never
  * converts amounts between currencies; it only re-homes existing values onto
@@ -196,6 +197,39 @@ async function run() {
         orderUpdates += result.modifiedCount;
     }
     console.log(`Orders stamped with a currency snapshot: ${orderUpdates}`);
+
+    // ---------------------------------------------------------------------
+    // 5. Reorder templates → the country of their warehouse
+    // ---------------------------------------------------------------------
+    // Templates were global before; each one names a warehouse, and a
+    // warehouse belongs to exactly one country, so that is where the template
+    // lives. Templates whose warehouse is gone fall back to the default country.
+    const templatesCol = db.collection('reordertemplates');
+    const warehousesCol = db.collection('warehouses');
+
+    let templateUpdates = 0;
+    for (const template of await templatesCol.find({ countryId: { $exists: false } }).toArray()) {
+        const warehouse = template.warehouse
+            ? await warehousesCol.findOne({ _id: template.warehouse })
+            : null;
+        const countryId = (warehouse && warehouse.countryId) || defaultCountry._id;
+
+        await templatesCol.updateOne(
+            { _id: template._id },
+            { $set: { countryId, updatedAt: new Date() } }
+        );
+        templateUpdates += 1;
+    }
+    console.log(`Reorder templates assigned a country: ${templateUpdates}`);
+
+    // The unique name index now includes the country; the old per-user one
+    // would otherwise block reusing a name in a second market.
+    try {
+        await templatesCol.dropIndex('createdBy_1_name_1');
+        console.log('Dropped old template name index (createdBy_1_name_1)');
+    } catch (err) {
+        if (err.codeName !== 'IndexNotFound') throw err;
+    }
 
     console.log('\nMigration complete.');
     await mongoose.disconnect();

@@ -36,9 +36,24 @@ const orderSchema = new mongoose.Schema(
                     required: true,
                     min: 1, // Stored in pieces
                 },
+                // Net unit price actually charged — what totals are built from.
                 price: {
-                    type: Number, // Optional for this task, but good practice
-                }
+                    type: Number,
+                },
+                // The product's actual (pre-discount) unit price at the time of
+                // sale, so receipts can show what was discounted rather than
+                // only the net figure.
+                originalPrice: {
+                    type: Number,
+                    min: 0,
+                },
+                // Per-unit discount applied to this line (0 for global discounts,
+                // which are recorded once on the order instead).
+                discount: {
+                    type: Number,
+                    min: 0,
+                    default: 0,
+                },
             }
         ],
         status: {

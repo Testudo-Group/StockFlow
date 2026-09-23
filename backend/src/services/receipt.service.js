@@ -2,6 +2,8 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 const { formatMoneyCode, orderCurrency } = require('../utils/currency');
+const { describeLine, orderGrossSubtotal } = require('../utils/orderLines');
+const { COMPANY, companyAddressLines } = require('../config/company');
 
 /**
  * Receipt Generation Service
@@ -15,14 +17,8 @@ class ReceiptService {
             fs.mkdirSync(this.receiptsDir, { recursive: true });
         }
         
-        // Company information
-        this.companyInfo = {
-            name: 'GidiGames',
-            address: 'HANA PLAZA, 109 Awolowo Road, Ikoyi, Lagos',
-            phone: '+2349091111666',
-            email: 'gidiwords@gmail.com',
-            website: 'gidigames.com.ng'
-        };
+        // Company information — the address is resolved per order country
+        this.companyInfo = COMPANY;
     }
 
     /**
@@ -52,10 +48,10 @@ class ReceiptService {
                 doc.pipe(stream);
 
                 // Company Header
-                this.addCompanyHeader(doc);
+                const companyBottom = this.addCompanyHeader(doc, order);
 
                 // Header
-                this.addHeader(doc, order);
+                this.addHeader(doc, order, companyBottom);
                 
                 // Customer Info
                 this.addCustomerInfo(doc, order);
@@ -92,7 +88,7 @@ class ReceiptService {
         });
     }
 
-    addCompanyHeader(doc) {
+    addCompanyHeader(doc, order) {
         const logoX = 50;
         const logoY = 50;
         const logoSize = 60;
@@ -123,18 +119,31 @@ class ReceiptService {
            .fillColor('#1E293B')
            .text(this.companyInfo.name, companyDetailsX, startY, { width: companyColumnWidth });
         
-        // Company Address and Contact
+        // Company Address and Contact. Countries with no address on file print
+        // none, and the contact lines move up to close the gap.
+        const addressLines = companyAddressLines(order);
+
         doc.fontSize(9)
            .font('Helvetica')
-           .fillColor('#64748B')
-           .text(this.companyInfo.address, companyDetailsX, startY + 30, { width: companyColumnWidth })
-           .text(`Phone: ${this.companyInfo.phone}`, companyDetailsX, startY + 43, { width: companyColumnWidth })
-           .text(`Email: ${this.companyInfo.email}`, companyDetailsX, startY + 56, { width: companyColumnWidth });
+           .fillColor('#64748B');
+
+        let lineY = startY + 30;
+        for (const line of addressLines) {
+            doc.text(line, companyDetailsX, lineY, { width: companyColumnWidth });
+            lineY += 13;
+        }
+
+        doc.text(`Phone: ${this.companyInfo.phone}`, companyDetailsX, lineY, { width: companyColumnWidth });
+        doc.text(`Email: ${this.companyInfo.email}`, companyDetailsX, lineY + 13, { width: companyColumnWidth });
         
         doc.moveDown(1);
+
+        // Bottom of this column, so the divider can clear it however many
+        // address lines the country has.
+        return lineY + 13 + 11;
     }
 
-    addHeader(doc, order) {
+    addHeader(doc, order, companyBottom = 0) {
         // Right side - Order details (aligned with company info)
         const rightColumnX = 380;
         const rightColumnWidth = 165;
@@ -171,8 +180,9 @@ class ReceiptService {
         //    .text(`${order.status}`, rightColumnX, startY + 55, { align: 'right', width: rightColumnWidth })
         //    .fillColor('#000000');
         
-        // Move down past both columns
-        doc.y = 125;
+        // Move down past both columns — the company column grows with the
+        // number of address lines, so never overlap it.
+        doc.y = Math.max(125, companyBottom + 6);
         
         // Horizontal line
         doc.moveTo(50, doc.y)
@@ -267,78 +277,90 @@ class ReceiptService {
     addItemsTable(doc, order) {
         const tableTop = doc.y;
         const itemHeight = 25;
-        
+        const currency = orderCurrency(order);
+
         // Table headers
         doc.fontSize(9)
            .font('Helvetica-Bold')
            .fillColor('#64748B');
-        
+
         doc.text('#', 50, tableTop, { width: 20 });
         doc.text('PRODUCT', 75, tableTop);
         doc.text('QTY', 300, tableTop, { width: 80, align: 'right' });
         doc.text('UNIT PRICE', 390, tableTop, { width: 80, align: 'right' });
         doc.text('SUBTOTAL', 480, tableTop, { width: 65, align: 'right' });
-        
+
         // Line under headers
         doc.moveTo(50, tableTop + 15)
            .lineTo(545, tableTop + 15)
            .strokeColor('#E2E8F0')
            .stroke();
-        
+
         // Items
         let currentY = tableTop + 25;
         doc.fillColor('#000000')
            .font('Helvetica');
-        
+
         order.items.forEach((item, index) => {
             const cartonSize = item.product?.cartonSize || 1;
             const cartons = Math.floor(item.quantity / cartonSize);
             const pieces = item.quantity % cartonSize;
-            const subtotal = item.quantity * (item.price || 0);
-            
-            // Check if we need a new page
-            if (currentY > 700) {
+
+            // Lines print at the product's actual price; any discount is shown
+            // beneath so the reader can see exactly what was taken off.
+            const line = describeLine(order, item);
+            const hasLineDiscount = line.unitDiscount > 0;
+
+            // Check if we need a new page (leave room for a discount line)
+            if (currentY > (hasLineDiscount ? 688 : 700)) {
                 doc.addPage();
                 currentY = 50;
             }
-            
+
             // Item number
             doc.fontSize(9)
                .text(`${index + 1}`, 50, currentY, { width: 20 });
-            
+
             // Product name (truncate if too long)
             const productName = (item.product?.name || 'Unknown').substring(0, 40);
             doc.text(productName, 75, currentY, { width: 215 });
-            
+
             // Quantity
             let qtyText;
             if (cartonSize > 1) {
                 if (cartons > 0 && pieces > 0) {
-                    // Both cartons and pieces
                     qtyText = `${cartons} ctn, ${pieces} pcs`;
                 } else if (cartons > 0) {
-                    // Only cartons
                     qtyText = `${cartons} ctn`;
                 } else {
-                    // Only pieces
                     qtyText = `${pieces} pcs`;
                 }
             } else {
-                // No carton size, just show pieces
                 qtyText = `${item.quantity} pcs`;
             }
             doc.text(qtyText, 300, currentY, { width: 80, align: 'right' });
-            
-            // Unit Price
-            doc.text(formatMoneyCode((item.price || 0), orderCurrency(order)), 
+
+            // Unit price and subtotal at the actual (pre-discount) price
+            doc.text(formatMoneyCode(line.originalPrice, currency),
                      390, currentY, { width: 80, align: 'right' });
-            
-            // Subtotal
-            doc.text(formatMoneyCode(subtotal, orderCurrency(order)), 
+            doc.text(formatMoneyCode(line.lineTotal, currency),
                      480, currentY, { width: 65, align: 'right' });
-            
+
             currentY += itemHeight + (cartonSize > 1 && cartons > 0 && pieces > 0 ? 5 : 0);
-            
+
+            // Discount beneath the item it applies to
+            if (hasLineDiscount) {
+                doc.fontSize(8)
+                   .fillColor('#EF4444')
+                   .text(`Discount ${formatMoneyCode(line.unitDiscount, currency)} x ${line.quantity}`,
+                         75, currentY - 8, { width: 305 })
+                   .text(formatMoneyCode(line.lineDiscount, currency, { negative: true }),
+                         480, currentY - 8, { width: 65, align: 'right' })
+                   .fontSize(9)
+                   .fillColor('#000000');
+                currentY += 12;
+            }
+
             // Light separator line
             if (index < order.items.length - 1) {
                 doc.moveTo(50, currentY - 5)
@@ -347,7 +369,7 @@ class ReceiptService {
                    .stroke();
             }
         });
-        
+
         doc.y = currentY + 10;
     }
 
@@ -367,7 +389,8 @@ class ReceiptService {
            .font('Helvetica');
         
         // Calculate items subtotal
-        const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.quantity * (item.price || 0)), 0);
+        // Pre-discount subtotal, so Subtotal - Discount + Delivery = Total
+        const itemsSubtotal = orderGrossSubtotal(order);
         
         // Subtotal (if discount or delivery fee exists)
         if (order.discountAmount > 0 || order.deliveryFee > 0) {

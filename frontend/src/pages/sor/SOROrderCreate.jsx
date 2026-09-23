@@ -238,6 +238,9 @@ const SOROrderCreate = () => {
                     product: i.product,
                     quantity: i.quantity,
                     price: Math.max(0, (i.price || 0) - (i.discount || 0)),
+                    // Keep the actual price so documents can show the discount
+                    originalPrice: i.price || 0,
+                    discount: Math.min(i.price || 0, i.discount || 0),
                 })),
                 subtotal,
                 discountAmount: finalDiscountAmount,

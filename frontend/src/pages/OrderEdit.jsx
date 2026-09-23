@@ -135,28 +135,6 @@ const BundleSearchSelect = ({ value, options, onChange, placeholder }) => {
 // ---------------------------------------------------------------------------
 // OrderEdit page
 // ---------------------------------------------------------------------------
-const COUNTRIES = [
-    'Nigeria','Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia','Austria',
-    'Azerbaijan','Bahamas','Bahrain','Bangladesh','Belarus','Belgium','Belize','Benin','Bhutan','Bolivia',
-    'Bosnia and Herzegovina','Botswana','Brazil','Brunei','Bulgaria','Burkina Faso','Burundi','Cambodia',
-    'Cameroon','Canada','Cape Verde','Central African Republic','Chad','Chile','China','Colombia','Comoros',
-    'Congo','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic','Denmark','Djibouti','Dominican Republic',
-    'Ecuador','Egypt','El Salvador','Equatorial Guinea','Eritrea','Estonia','Eswatini','Ethiopia','Fiji',
-    'Finland','France','Gabon','Gambia','Georgia','Germany','Ghana','Greece','Guatemala','Guinea',
-    'Guinea-Bissau','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq',
-    'Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kuwait','Kyrgyzstan','Laos',
-    'Latvia','Lebanon','Lesotho','Liberia','Libya','Liechtenstein','Lithuania','Luxembourg','Madagascar',
-    'Malawi','Malaysia','Maldives','Mali','Malta','Mauritania','Mauritius','Mexico','Moldova','Monaco',
-    'Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nepal','Netherlands','New Zealand',
-    'Nicaragua','Niger','North Korea','North Macedonia','Norway','Oman','Pakistan','Palestine','Panama',
-    'Papua New Guinea','Paraguay','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia',
-    'Rwanda','Saudi Arabia','Senegal','Serbia','Sierra Leone','Singapore','Slovakia','Slovenia','Somalia',
-    'South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan','Suriname','Sweden','Switzerland',
-    'Syria','Taiwan','Tajikistan','Tanzania','Thailand','Togo','Trinidad and Tobago','Tunisia','Turkey',
-    'Turkmenistan','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States','Uruguay',
-    'Uzbekistan','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe',
-];
-
 const OrderEdit = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -379,10 +357,18 @@ const OrderEdit = () => {
         if (formData.items.length === 0) return toast.error('Add at least one item');
         setSubmitting(true);
         try {
-            const combinedAddress = formData.customer.zip
-                ? `${formData.customer.street}, ${formData.customer.city}, ${formData.customer.state} ${formData.customer.zip}`
-                : `${formData.customer.street}, ${formData.customer.city}, ${formData.customer.state}`;
-            const customerData = { ...formData.customer, address: combinedAddress };
+            const addressParts = [
+                formData.customer.street,
+                formData.customer.city,
+                [formData.customer.state, formData.customer.zip].filter(Boolean).join(' '),
+            ].map((part) => (part || '').trim()).filter(Boolean);
+            const combinedAddress = addressParts.join(', ');
+            const customerData = {
+                ...formData.customer,
+                address: combinedAddress,
+                // Always the country the app is operating in
+                country: activeCountry?.name || formData.customer.country,
+            };
 
             const expandedItems = [];
             let itemsSubtotal = 0;
@@ -402,7 +388,7 @@ const OrderEdit = () => {
                         const lineTotal = item.bundleQty * bp.quantity * productPrice;
                         itemsSubtotal += lineTotal;
                         orderSubtotal += lineTotal;
-                        expandedItems.push({ product: bp.product._id, quantity: item.bundleQty * bp.quantity, price: productPrice });
+                        expandedItems.push({ product: bp.product._id, quantity: item.bundleQty * bp.quantity, price: productPrice, originalPrice: productPrice, discount: 0 });
                     }
                 } else {
                     if (item.cartonQty === 0 && item.pieceQty === 0) throw new Error('Each product item must have a Carton or Piece quantity');
@@ -410,10 +396,15 @@ const OrderEdit = () => {
                     const cartonSize = product?.cartonSize || 1;
                     const quantity = (item.cartonQty * cartonSize) + item.pieceQty;
                     let pricePerPiece = item.price;
-                    if (applyDiscount && discountType === 'individual') pricePerPiece = Math.max(0, item.price - (item.discount || 0));
+                    let discountPerPiece = 0;
+                    if (applyDiscount && discountType === 'individual') {
+                        discountPerPiece = Math.min(item.price, item.discount || 0);
+                        pricePerPiece = Math.max(0, item.price - discountPerPiece);
+                    }
                     itemsSubtotal += quantity * pricePerPiece;
                     orderSubtotal += quantity * item.price;
-                    expandedItems.push({ product: item.product, quantity, price: pricePerPiece });
+                    // Keep the actual price so documents can show the discount
+                    expandedItems.push({ product: item.product, quantity, price: pricePerPiece, originalPrice: item.price, discount: discountPerPiece });
                 }
             }
 
@@ -507,12 +498,12 @@ const OrderEdit = () => {
                     </div>
                     <div className="form-row">
                         <div className="form-group">
-                            <label>City</label>
-                            <input value={formData.customer.city} onChange={e => setFormData(p => ({ ...p, customer: { ...p.customer, city: e.target.value } }))} required />
+                            <label>City (Optional)</label>
+                            <input value={formData.customer.city} onChange={e => setFormData(p => ({ ...p, customer: { ...p.customer, city: e.target.value } }))} />
                         </div>
                         <div className="form-group">
-                            <label>State/Province</label>
-                            <input value={formData.customer.state} onChange={e => setFormData(p => ({ ...p, customer: { ...p.customer, state: e.target.value } }))} required />
+                            <label>State/Province (Optional)</label>
+                            <input value={formData.customer.state} onChange={e => setFormData(p => ({ ...p, customer: { ...p.customer, state: e.target.value } }))} />
                         </div>
                         <div className="form-group">
                             <label>Zip Code (Optional)</label>
@@ -522,9 +513,8 @@ const OrderEdit = () => {
                     <div className="form-row">
                         <div className="form-group">
                             <label>Country</label>
-                            <select value={formData.customer.country} onChange={e => setFormData(p => ({ ...p, customer: { ...p.customer, country: e.target.value } }))}>
-                                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            {/* Orders belong to the country the app is switched to — not a free choice */}
+                            <input value={activeCountry?.name || ''} readOnly disabled style={{ background: '#F8FAFC', color: '#64748B' }} />
                         </div>
                     </div>
                     <div className="form-row">

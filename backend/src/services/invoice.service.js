@@ -1,7 +1,9 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-const { formatMoneyCode, orderCurrency } = require('../utils/currency');
+const { formatMoneyCode, orderCurrency, resolveCurrency } = require('../utils/currency');
+const { describeLine, orderGrossSubtotal } = require('../utils/orderLines');
+const { COMPANY, companyAddressLines } = require('../config/company');
 
 /**
  * Invoice Generation Service
@@ -15,14 +17,8 @@ class InvoiceService {
             fs.mkdirSync(this.invoicesDir, { recursive: true });
         }
         
-        // Company information
-        this.companyInfo = {
-            name: 'GidiGames',
-            address: 'HANA PLAZA, 109 Awolowo Road, Ikoyi, Lagos',
-            phone: '+2349091111666',
-            email: 'gidiwords@gmail.com',
-            website: 'gidigames.com.ng'
-        };
+        // Company information — the address is resolved per order country
+        this.companyInfo = COMPANY;
     }
 
     /**
@@ -52,7 +48,7 @@ class InvoiceService {
                 doc.pipe(stream);
 
                 // Company Header with Logo
-                this.addCompanyHeader(doc);
+                this.addCompanyHeader(doc, order);
                 
                 // Customer Info and Date
                 this.addCustomerInfo(doc, order);
@@ -86,7 +82,7 @@ class InvoiceService {
         });
     }
 
-    addCompanyHeader(doc) {
+    addCompanyHeader(doc, order) {
         const startY = 50;
         const rightX = 400;
         
@@ -131,14 +127,21 @@ class InvoiceService {
            .lineWidth(1)
            .stroke();
         
-        // Company details below the line
+        // Company address below the line — countries with none print nothing,
+        // and the block below moves up to close the gap.
+        const addressLines = companyAddressLines(order);
+
         doc.fontSize(8)
            .font('Helvetica')
-           .fillColor('#64748B')
-           .text('HAKA PLAZA, 109 AWOLOWO ROAD', rightX, 115, { align: 'right', width: 145 })
-           .text('IKOYI, LAGOS', rightX, 127, { align: 'right', width: 145 });
-        
-        doc.y = 145;
+           .fillColor('#64748B');
+
+        let lineY = 115;
+        for (const line of addressLines) {
+            doc.text(line, rightX, lineY, { align: 'right', width: 145 });
+            lineY += 12;
+        }
+
+        doc.y = addressLines.length > 0 ? lineY + 6 : 121;
     }
 
     addInvoiceHeader(doc, order) {
@@ -221,27 +224,45 @@ class InvoiceService {
            .font('Helvetica')
            .fontSize(9);
         
+        const currency = orderCurrency(order);
+
         order.items.forEach((item, index) => {
-            const subtotal = item.quantity * (item.price || 0);
-            
-            if (currentY > 680) {
+            // Lines print at the product's actual price; any discount is shown
+            // beneath so the reader can see exactly what was taken off.
+            const line = describeLine(order, item);
+            const hasLineDiscount = line.unitDiscount > 0;
+
+            if (currentY > (hasLineDiscount ? 668 : 680)) {
                 doc.addPage();
                 currentY = 50;
             }
-            
+
             doc.text(`${index + 1}`, colNo, currentY);
             doc.text(item.product?.name || 'Unknown', colDetails, currentY, { width: 210 });
-            
+
             // Always show total pieces (no carton conversion)
             doc.text(`${item.quantity} pcs`, colQty, currentY, { width: 65, align: 'center' });
-            doc.text(formatMoneyCode((item.price || 0), orderCurrency(order)),
+            doc.text(formatMoneyCode(line.originalPrice, currency),
                      colPrice, currentY, { width: 75, align: 'right' });
-            doc.text(formatMoneyCode(subtotal, orderCurrency(order)),
+            doc.text(formatMoneyCode(line.lineTotal, currency),
                      colTotal, currentY, { width: 70, align: 'right' });
-            
+
             currentY += itemHeight;
+
+            // Discount beneath the item it applies to
+            if (hasLineDiscount) {
+                doc.fontSize(8)
+                   .fillColor('#B91C1C')
+                   .text(`Discount ${formatMoneyCode(line.unitDiscount, currency)} x ${line.quantity}`,
+                         colDetails, currentY - 4, { width: 210 })
+                   .text(formatMoneyCode(line.lineDiscount, currency, { negative: true }),
+                         colTotal, currentY - 4, { width: 70, align: 'right' })
+                   .fontSize(9)
+                   .fillColor('#1E293B');
+                currentY += 12;
+            }
         });
-        
+
         doc.y = currentY + 10;
     }
 
@@ -249,30 +270,33 @@ class InvoiceService {
         const labelX = 370;
         const valueX  = 460;
         const valueW  = 85;
+        const currency = orderCurrency(order);
 
         doc.fontSize(10)
            .font('Helvetica-Bold')
            .fillColor('#1E293B');
 
-        const itemsSubtotal = order.items.reduce((acc, item) => acc + (item.quantity * (item.price || 0)), 0);
+        // Pre-discount subtotal, so Subtotal - Discount + Delivery = Total
+        const itemsSubtotal = orderGrossSubtotal(order);
 
-        // Net Total — pin both label and value to the same Y
-        const netY = doc.y;
-        doc.text('Net Total', labelX, netY);
-        doc.text(formatMoneyCode(itemsSubtotal, orderCurrency(order)),
-                 valueX, netY, { width: valueW, align: 'right' });
+        const row = (label, value, opts = {}) => {
+            const y = doc.y;
+            doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
+               .fillColor(opts.color || '#1E293B');
+            doc.text(label, labelX, y);
+            doc.text(value, valueX, y, { width: valueW, align: 'right' });
+            doc.fillColor('#1E293B');
+            doc.y = y + 20;
+        };
 
-        doc.y = netY + 20;
+        row('Subtotal', formatMoneyCode(itemsSubtotal, currency), { bold: true });
 
-        // Delivery fee (if any)
+        if (order.discountAmount > 0) {
+            row('Discount', formatMoneyCode(order.discountAmount, currency, { negative: true }), { color: '#B91C1C' });
+        }
+
         if (order.deliveryFee > 0) {
-            const deliveryY = doc.y;
-            doc.fontSize(10).font('Helvetica').fillColor('#1E293B');
-            doc.text('Delivery Fee', labelX, deliveryY);
-            doc.text(formatMoneyCode(order.deliveryFee, orderCurrency(order)),
-                     valueX, deliveryY, { width: valueW, align: 'right' });
-            doc.y = deliveryY + 20;
-            doc.font('Helvetica-Bold');
+            row('Delivery Fee', formatMoneyCode(order.deliveryFee, currency));
         }
 
         // Separator line
@@ -284,14 +308,14 @@ class InvoiceService {
 
         doc.y = doc.y + 8;
 
-        // NAIRA TOTAL
+        // Grand total, labelled with the order's own currency
         doc.fontSize(11)
            .font('Helvetica-Bold')
            .fillColor('#1E293B');
 
         const totalY = doc.y;
-        doc.text('NAIRA TOTAL', labelX, totalY);
-        doc.text(formatMoneyCode(order.totalAmount, orderCurrency(order)),
+        doc.text(`${resolveCurrency(currency).code} TOTAL`, labelX, totalY);
+        doc.text(formatMoneyCode(order.totalAmount, currency),
                  valueX, totalY, { width: valueW, align: 'right' });
 
         doc.y = totalY + 24;

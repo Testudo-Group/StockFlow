@@ -20,6 +20,7 @@ exports.createTemplate = async (req, res, next) => {
             warehouse,
             items,
             createdBy: req.user.id,
+            countryId: req.countryId,
         });
 
         res.status(201).json({
@@ -34,12 +35,12 @@ exports.createTemplate = async (req, res, next) => {
     }
 };
 
-// @desc    Get all templates (available to all users)
+// @desc    Get all templates for the active country (available to all users)
 // @route   GET /api/templates
 // @access  Private
 exports.getTemplates = async (req, res, next) => {
     try {
-        const templates = await ReorderTemplate.find()
+        const templates = await ReorderTemplate.find({ countryId: req.countryId })
             .populate('items.product', 'name sku cartonSize') // Populate for display
             .populate('warehouse', 'name')
             .populate('region', 'name')
@@ -63,7 +64,8 @@ exports.deleteTemplate = async (req, res, next) => {
     try {
         const template = await ReorderTemplate.findOne({
             _id: req.params.id,
-            createdBy: req.user.id
+            createdBy: req.user.id,
+            countryId: req.countryId,
         });
 
         if (!template) {
