@@ -96,9 +96,45 @@ const orderGrossSubtotal = (order) => {
     );
 };
 
+/**
+ * Attach the resolved pre-discount figures to an order so the screens show the
+ * same prices the receipt does.
+ *
+ * Each line gains the actual unit price it was discounted from and the discount
+ * taken off it; the order gains its pre-discount subtotal. The stored `price`
+ * is left untouched, so anything still reading it keeps working.
+ *
+ * @param {object} order  Order document or plain object
+ * @returns {object} plain object with display fields added
+ */
+const withDisplayLines = (order) => {
+    if (!order) return order;
+
+    const obj = typeof order.toObject === 'function' ? order.toObject() : { ...order };
+    const items = obj.items || [];
+
+    // describeLine reads the order's lines, so resolve every line against the
+    // original list before replacing it.
+    obj.items = items.map((item) => {
+        const line = describeLine(obj, item);
+        return {
+            ...item,
+            displayUnitPrice: line.originalPrice,
+            displayUnitDiscount: line.unitDiscount,
+            displayLineTotal: line.lineTotal,
+            displayLineDiscount: line.lineDiscount,
+        };
+    });
+
+    obj.displaySubtotal = orderGrossSubtotal({ ...obj, items });
+
+    return obj;
+};
+
 module.exports = {
     describeLine,
     lineOriginalPrice,
     lineUnitDiscount,
     orderGrossSubtotal,
+    withDisplayLines,
 };

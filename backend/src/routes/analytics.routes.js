@@ -1,6 +1,6 @@
 const express = require('express');
 const { getStats, getCustomerAnalytics, getWarehouseMonthly } = require('../controllers/analytics.controller');
-const { protect, authorize } = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 const validateCountryAccess = require('../middleware/validateCountryAccess');
 const router = express.Router();
 
